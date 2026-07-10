@@ -11,13 +11,25 @@ from utils.metrics import masked_bce_with_logits, masked_ber
 
 
 @torch.no_grad()
-def evaluate_snr(model, snr_db, phase_mode, h_hat_mode, num_samples, batch_size, device):
+def evaluate_snr(
+    model,
+    snr_db,
+    phase_mode,
+    h_hat_mode,
+    dmrs_freq_spacing,
+    dmrs_freq_offset,
+    num_samples,
+    batch_size,
+    device,
+):
     dataset = OFDMDataset(
         num_samples=num_samples,
         snr_db_min=snr_db,
         snr_db_max=snr_db,
         h_hat_mode=h_hat_mode,
         phase_mode=phase_mode,
+        dmrs_freq_spacing=dmrs_freq_spacing,
+        dmrs_freq_offset=dmrs_freq_offset,
         seed=777000 + int(100 * snr_db),
     )
 
@@ -50,13 +62,21 @@ def parse_snr_list(text):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, required=True,
-                        choices=["real_imag_cnn", "physical_cnn", "phase_invariant"])
+                        choices=[
+                            "real_imag_cnn",
+                            "physical_cnn",
+                            "phase_invariant",
+                            "complex_no_interaction",
+                            "single_branch",
+                        ])
     parser.add_argument("--checkpoint", type=str, required=True)
     parser.add_argument("--phase_mode", type=str, default="uniform",
                         choices=["fixed", "narrow", "uniform"])
-    parser.add_argument("--h_hat_mode", type=str, default="oracle_noisy",
+    parser.add_argument("--h_hat_mode", type=str, default="dmrs_ls_interp",
                         choices=["oracle_noisy", "dmrs_ls_interp"])
-    parser.add_argument("--snr_list", type=str, default="0,2,4,6,8,10,12,14,16,18,20")
+    parser.add_argument("--dmrs_freq_spacing", type=int, default=1)
+    parser.add_argument("--dmrs_freq_offset", type=int, default=0)
+    parser.add_argument("--snr_list", type=str, default="-10,-8,-6,-4,-2, 0,2,4,6,8,10,12,14,16,18,20")
     parser.add_argument("--num_samples", type=int, default=4000)
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--device", type=str, default="cuda")
@@ -69,6 +89,8 @@ def main():
     parser.add_argument("--no_norm", action="store_true")
     parser.add_argument("--gate_type", type=str, default="swiglu",
                         choices=["sigmoid", "swiglu"])
+    parser.add_argument("--single_readout_mode", type=str, default="low_rank",
+                        choices=["low_rank", "full"])
 
     parser.add_argument("--out_csv", type=str, default="ber_results.csv")
 
@@ -86,9 +108,10 @@ def main():
         kernel_size=args.kernel_size,
         use_norm=not args.no_norm,
         gate_type=args.gate_type,
+        single_readout_mode=args.single_readout_mode,
     ).to(device)
 
-    ckpt = torch.load(args.checkpoint, map_location=device)
+    ckpt = torch.load(args.checkpoint, map_location=device, weights_only=True)
     model.load_state_dict(ckpt["model_state"])
 
     snr_values = parse_snr_list(args.snr_list)
@@ -100,6 +123,8 @@ def main():
             snr_db=snr,
             phase_mode=args.phase_mode,
             h_hat_mode=args.h_hat_mode,
+            dmrs_freq_spacing=args.dmrs_freq_spacing,
+            dmrs_freq_offset=args.dmrs_freq_offset,
             num_samples=args.num_samples,
             batch_size=args.batch_size,
             device=device,

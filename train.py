@@ -5,7 +5,13 @@ import torch
 from torch.utils.data import DataLoader
 
 from data import OFDMDataset
-from models import RealImagCNN, PhysicalFeatureCNN, PhaseInvariantReceiver
+from models import (
+    ComplexCNNNoInteraction,
+    PhysicalFeatureCNN,
+    PhaseInvariantReceiver,
+    RealImagCNN,
+    SingleBranchPhaseInvariantReceiver,
+)
 from utils.metrics import masked_bce_with_logits, masked_ber
 
 
@@ -19,6 +25,7 @@ def build_model(
     kernel_size=3,
     use_norm=True,
     gate_type="swiglu",
+    single_readout_mode="low_rank",
 ):
     if name == "real_imag_cnn":
         return RealImagCNN(hidden=hidden, bits_per_symbol=bits_per_symbol)
@@ -42,6 +49,28 @@ def build_model(
             kernel_size=kernel_size,
             use_norm=use_norm,
             gate_type=gate_type
+        )
+    if name == "complex_no_interaction":
+        return ComplexCNNNoInteraction(
+            hidden_complex=hidden_complex,
+            hidden_real=hidden,
+            bits_per_symbol=bits_per_symbol,
+            branch_layers=branch_layers,
+            kernel_size=kernel_size,
+            use_norm=use_norm,
+            gate_type=gate_type,
+        )
+    if name == "single_branch":
+        return SingleBranchPhaseInvariantReceiver(
+            hidden_complex=hidden_complex,
+            zero_real=zero_complex,
+            hidden_real=hidden,
+            bits_per_symbol=bits_per_symbol,
+            num_blocks=branch_layers,
+            kernel_size=kernel_size,
+            use_norm=use_norm,
+            gate_type=gate_type,
+            readout_mode=single_readout_mode,
         )
     raise ValueError(f"Unknown model: {name}")
 
@@ -109,7 +138,13 @@ def evaluate(model, loader, device):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="phase_invariant",
-                        choices=["real_imag_cnn", "physical_cnn", "phase_invariant"])
+                        choices=[
+                            "real_imag_cnn",
+                            "physical_cnn",
+                            "phase_invariant",
+                            "complex_no_interaction",
+                            "single_branch",
+                        ])
 
     parser.add_argument("--train_phase_mode", type=str, default="fixed",
                         choices=["fixed", "narrow", "uniform"])
@@ -118,14 +153,16 @@ def main():
 
     parser.add_argument("--num_train", type=int, default=10000)
     parser.add_argument("--num_val", type=int, default=2000)
-    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch_size", type=int, default=64)
 
-    parser.add_argument("--snr_db_min", type=float, default=0.0)
+    parser.add_argument("--snr_db_min", type=float, default=-5.0)
     parser.add_argument("--snr_db_max", type=float, default=20.0)
     parser.add_argument("--channel_error_std", type=float, default=0.05)
-    parser.add_argument("--h_hat_mode", type=str, default="oracle_noisy",
+    parser.add_argument("--h_hat_mode", type=str, default="dmrs_ls_interp",
                         choices=["oracle_noisy", "dmrs_ls_interp"])
+    parser.add_argument("--dmrs_freq_spacing", type=int, default=1)
+    parser.add_argument("--dmrs_freq_offset", type=int, default=0)
 
     parser.add_argument("--hidden", type=int, default=32)
     parser.add_argument("--hidden_complex", type=int, default=16)
@@ -135,13 +172,15 @@ def main():
     parser.add_argument("--no_norm", action="store_true")
     parser.add_argument("--gate_type", type=str, default="swiglu",
                         choices=["sigmoid", "swiglu"])
+    parser.add_argument("--single_readout_mode", type=str, default="low_rank",
+                        choices=["low_rank", "full"])
 
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight_decay", type=float, default=0.0)
     parser.add_argument("--num_workers", type=int, default=0)
     parser.add_argument("--log_interval", type=int, default=50)
 
-    parser.add_argument("--save_dir", type=str, default="runs/debug")
+    parser.add_argument("--save_dir", type=str, default="runs/debug/")
     parser.add_argument("--device", type=str, default="cuda")
 
     args = parser.parse_args()
@@ -157,6 +196,8 @@ def main():
         channel_error_std=args.channel_error_std,
         h_hat_mode=args.h_hat_mode,
         phase_mode=args.train_phase_mode,
+        dmrs_freq_spacing=args.dmrs_freq_spacing,
+        dmrs_freq_offset=args.dmrs_freq_offset,
         seed=0,
     )
 
@@ -167,6 +208,8 @@ def main():
         channel_error_std=args.channel_error_std,
         h_hat_mode=args.h_hat_mode,
         phase_mode=args.val_phase_mode,
+        dmrs_freq_spacing=args.dmrs_freq_spacing,
+        dmrs_freq_offset=args.dmrs_freq_offset,
         seed=100000,
     )
 
@@ -192,6 +235,7 @@ def main():
         kernel_size=args.kernel_size,
         use_norm=not args.no_norm,
         gate_type=args.gate_type,
+        single_readout_mode=args.single_readout_mode,
     ).to(device)
 
     optimizer = torch.optim.AdamW(

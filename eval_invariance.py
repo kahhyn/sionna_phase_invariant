@@ -13,13 +13,21 @@ from utils.metrics import max_mean_abs_diff
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="phase_invariant",
-                        choices=["real_imag_cnn", "physical_cnn", "phase_invariant"])
+                        choices=[
+                            "real_imag_cnn",
+                            "physical_cnn",
+                            "phase_invariant",
+                            "complex_no_interaction",
+                            "single_branch",
+                        ])
     parser.add_argument("--checkpoint", type=str, default="")
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--num_batches", type=int, default=5)
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--h_hat_mode", type=str, default="oracle_noisy",
                         choices=["oracle_noisy", "dmrs_ls_interp"])
+    parser.add_argument("--dmrs_freq_spacing", type=int, default=1)
+    parser.add_argument("--dmrs_freq_offset", type=int, default=0)
 
     parser.add_argument("--hidden", type=int, default=32)
     parser.add_argument("--hidden_complex", type=int, default=16)
@@ -29,6 +37,8 @@ def main():
     parser.add_argument("--no_norm", action="store_true")
     parser.add_argument("--gate_type", type=str, default="swiglu",
                         choices=["sigmoid", "swiglu"])
+    parser.add_argument("--single_readout_mode", type=str, default="low_rank",
+                        choices=["low_rank", "full"])
 
     args = parser.parse_args()
 
@@ -38,6 +48,8 @@ def main():
         num_samples=args.batch_size * args.num_batches,
         h_hat_mode=args.h_hat_mode,
         phase_mode="fixed",
+        dmrs_freq_spacing=args.dmrs_freq_spacing,
+        dmrs_freq_offset=args.dmrs_freq_offset,
         seed=12345,
     )
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
@@ -52,10 +64,11 @@ def main():
         kernel_size=args.kernel_size,
         use_norm=not args.no_norm,
         gate_type=args.gate_type,
+        single_readout_mode=args.single_readout_mode,
     ).to(device)
 
     if args.checkpoint:
-        ckpt = torch.load(args.checkpoint, map_location=device)
+        ckpt = torch.load(args.checkpoint, map_location=device, weights_only=True)
         model.load_state_dict(ckpt["model_state"])
 
     model.eval()
@@ -90,7 +103,7 @@ def main():
     print(f"max |ΔLLR|  = {max(max_diffs):.8e}")
     print(f"mean |ΔLLR| = {sum(mean_diffs) / len(mean_diffs):.8e}")
 
-    if args.model == "phase_invariant":
+    if args.model in ["phase_invariant", "single_branch"]:
         print("Expected: near numerical precision, e.g. around 1e-6 to 1e-5.")
     elif args.model == "physical_cnn":
         print("Expected: near numerical precision because input features are phase invariant.")
