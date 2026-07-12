@@ -19,6 +19,9 @@ def main():
                             "phase_invariant",
                             "complex_no_interaction",
                             "single_branch",
+                            "single_branch_n0_gate",
+                            "single_branch_p_only_gate",
+                            "single_branch_n0_only_gate",
                         ])
     parser.add_argument("--checkpoint", type=str, default="")
     parser.add_argument("--batch_size", type=int, default=32)
@@ -39,6 +42,7 @@ def main():
                         choices=["sigmoid", "swiglu"])
     parser.add_argument("--single_readout_mode", type=str, default="low_rank",
                         choices=["low_rank", "full"])
+    parser.add_argument("--zero_gate_hidden", type=int, default=16)
 
     args = parser.parse_args()
 
@@ -65,6 +69,7 @@ def main():
         use_norm=not args.no_norm,
         gate_type=args.gate_type,
         single_readout_mode=args.single_readout_mode,
+        zero_gate_hidden=args.zero_gate_hidden,
     ).to(device)
 
     if args.checkpoint:
@@ -103,7 +108,13 @@ def main():
     print(f"max |ΔLLR|  = {max(max_diffs):.8e}")
     print(f"mean |ΔLLR| = {sum(mean_diffs) / len(mean_diffs):.8e}")
 
-    if args.model in ["phase_invariant", "single_branch"]:
+    if args.model in [
+        "phase_invariant",
+        "single_branch",
+        "single_branch_n0_gate",
+        "single_branch_p_only_gate",
+        "single_branch_n0_only_gate",
+    ]:
         print("Expected: near numerical precision, e.g. around 1e-6 to 1e-5.")
     elif args.model == "physical_cnn":
         print("Expected: near numerical precision because input features are phase invariant.")

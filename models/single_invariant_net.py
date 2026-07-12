@@ -183,6 +183,37 @@ class HermitianInvariantReadout(nn.Module):
             return torch.cat([g.real, g.imag], dim=1)
 
 
+class ZeroOrderAmplitudeGate(nn.Module):
+    """Modulate charge-one features with invariant real-valued conditions.
+
+    ``P`` and ``log(N0)`` are charge-zero quantities. The gate therefore
+    remains unchanged under a common phase rotation and multiplication by
+    its real-valued scale preserves the charge of ``z``.
+    """
+
+    def __init__(self, channels, condition_hidden=16):
+        super().__init__()
+        if condition_hidden <= 0:
+            raise ValueError("condition_hidden must be positive.")
+        self.condition_net = nn.Sequential(
+            nn.Conv2d(2, condition_hidden, kernel_size=3, padding=1),
+            nn.SiLU(),
+            nn.Conv2d(condition_hidden, channels, kernel_size=1),
+        )
+
+        # Start from an exact identity gate: 2*sigmoid(0) = 1.
+        nn.init.zeros_(self.condition_net[-1].weight)
+        nn.init.zeros_(self.condition_net[-1].bias)
+
+    def forward(self, z, zero_features):
+        if not torch.is_complex(z):
+            raise TypeError("z must be a complex tensor.")
+        if zero_features.shape[1] != 2:
+            raise ValueError("zero_features must contain P and log(N0).")
+        scale = 2.0 * torch.sigmoid(self.condition_net(zero_features))
+        return z * scale
+
+
 class SingleBranchPhaseInvariantReceiver(nn.Module):
     """
     Single-branch phase-invariant receiver.
@@ -297,3 +328,92 @@ class SingleBranchPhaseInvariantReceiver(nn.Module):
         )
 
         return self.llr_head(x)
+
+
+class N0GatedSingleBranchPhaseInvariantReceiver(SingleBranchPhaseInvariantReceiver):
+    """SingleBranch receiver with P/N0 conditioning inside the complex trunk.
+
+    A charge-zero amplitude gate is applied after the input projection and
+    after every complex residual block. The final invariant readout and LLR
+    head are identical to :class:`SingleBranchPhaseInvariantReceiver`.
+    """
+
+    def __init__(
+        self,
+        hidden_complex=32,
+        zero_real=32,
+        hidden_real=32,
+        bits_per_symbol=2,
+        num_blocks=3,
+        kernel_size=3,
+        use_norm=True,
+        gate_type="swiglu",
+        readout_mode="low_rank",
+        zero_gate_hidden=16,
+        zero_gate_condition="p_n0",
+    ):
+        if zero_gate_condition not in {"p_n0", "p_only", "n0_only"}:
+            raise ValueError(
+                "zero_gate_condition must be p_n0, p_only, or n0_only."
+            )
+        super().__init__(
+            hidden_complex=hidden_complex,
+            zero_real=zero_real,
+            hidden_real=hidden_real,
+            bits_per_symbol=bits_per_symbol,
+            num_blocks=num_blocks,
+            kernel_size=kernel_size,
+            use_norm=use_norm,
+            gate_type=gate_type,
+            readout_mode=readout_mode,
+        )
+        self.zero_gate_condition = zero_gate_condition
+        self.input_zero_gate = ZeroOrderAmplitudeGate(
+            hidden_complex, condition_hidden=zero_gate_hidden
+        )
+        self.block_zero_gates = nn.ModuleList(
+            [
+                ZeroOrderAmplitudeGate(
+                    hidden_complex, condition_hidden=zero_gate_hidden
+                )
+                for _ in range(num_blocks)
+            ]
+        )
+
+    def forward(self, Y, H_hat, P, N0):
+        z = _prepare_complex_input(Y, H_hat)
+        batch_size, _, num_symbols, num_subcarriers = z.shape
+        P, N0_grid = _prepare_zero_features(
+            P,
+            N0,
+            batch_size,
+            num_symbols,
+            num_subcarriers,
+            z.device,
+        )
+        if self.zero_gate_condition == "p_only":
+            gate_p = P
+            gate_n0 = torch.zeros_like(N0_grid)
+        elif self.zero_gate_condition == "n0_only":
+            gate_p = torch.zeros_like(P)
+            gate_n0 = N0_grid
+        else:
+            gate_p = P
+            gate_n0 = N0_grid
+        zero_features = torch.cat([gate_p, gate_n0], dim=1)
+
+        z = self.input_proj(z)
+        z = self.input_zero_gate(z, zero_features)
+        z = self.input_gate(z)
+
+        for block, zero_gate in zip(self.blocks, self.block_zero_gates):
+            z = block(z)
+            z = zero_gate(z, zero_features)
+
+        invariant_feat = self.readout(z)
+        invariant_feat = self.mixchannel(invariant_feat)
+        llr_features = torch.cat(
+            [invariant_feat, P, N0_grid],
+            dim=1,
+        )
+        return self.llr_head(llr_features)

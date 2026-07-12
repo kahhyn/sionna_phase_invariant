@@ -68,6 +68,9 @@ def main():
                             "phase_invariant",
                             "complex_no_interaction",
                             "single_branch",
+                            "single_branch_n0_gate",
+                            "single_branch_p_only_gate",
+                            "single_branch_n0_only_gate",
                         ])
     parser.add_argument("--checkpoint", type=str, required=True)
     parser.add_argument("--phase_mode", type=str, default="uniform",
@@ -91,6 +94,7 @@ def main():
                         choices=["sigmoid", "swiglu"])
     parser.add_argument("--single_readout_mode", type=str, default="low_rank",
                         choices=["low_rank", "full"])
+    parser.add_argument("--zero_gate_hidden", type=int, default=16)
 
     parser.add_argument("--out_csv", type=str, default="ber_results.csv")
 
@@ -109,6 +113,7 @@ def main():
         use_norm=not args.no_norm,
         gate_type=args.gate_type,
         single_readout_mode=args.single_readout_mode,
+        zero_gate_hidden=args.zero_gate_hidden,
     ).to(device)
 
     ckpt = torch.load(args.checkpoint, map_location=device, weights_only=True)

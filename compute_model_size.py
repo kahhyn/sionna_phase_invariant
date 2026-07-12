@@ -1,36 +1,34 @@
-from utils.count_model_params import summarize_model
-from models.phase_invariant_net import PhaseInvariantReceiver
-from models.baseline_cnn import RealImagCNN, PhysicalFeatureCNN
-from models.complex_no_interaction_cnn import ComplexCNNNoInteraction
-from models.single_invariant_net import SingleBranchPhaseInvariantReceiver
+"""Print a parameter summary using the same model builder as training."""
 
-# print("--------RealImage_CNN_size---------")
-# model = RealImagCNN()
-# summary = summarize_model(model, verbose=True)
-#
-# print("--------PhysicalFeature_CNN_size---------")
-# model = PhysicalFeatureCNN(hidden=64,zero_complex=32,hidden_real=64,branch_layers=3,
-#                            bits_per_symbol=2, kernel_size=4,use_norm=True)
-# summary = summarize_model(model, verbose=True)
-#
-# print("--------PhaseInvariantNet_size---------")
-# model = PhaseInvariantReceiver(
-#             hidden_complex=32,
-#             zero_complex=32,
-#             hidden_real=64,
-#             bits_per_symbol=2,
-#             branch_layers=3,
-#             kernel_size=3,
-#             use_norm=True,
-#             gate_type="swiglu"
-#         )
-# summary = summarize_model(model, verbose=True)
+import argparse
 
-model = ComplexCNNNoInteraction(hidden_complex=64, hidden_real=32,
-                                branch_layers=3, gate_type="swiglu")
-summarize_model(model,verbose=True)
+from models.factory import MODEL_CHOICES, build_model_from_args
+from utils.count_model_params import print_summary, summarize_model
 
-# model = PhysicalFeatureCNNMatched()
-# summary = summarize_model(model, verbose=True)
-model = SingleBranchPhaseInvariantReceiver(hidden_complex=32, hidden_real=32)
-summarize_model(model, verbose=True)
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model",
+        required=True,
+        choices=MODEL_CHOICES,
+    )
+    parser.add_argument("--hidden", type=int, default=32)
+    parser.add_argument("--hidden_complex", type=int, default=16)
+    parser.add_argument("--zero_complex", type=int, default=16)
+    parser.add_argument("--branch_layers", type=int, default=2)
+    parser.add_argument("--kernel_size", type=int, default=3)
+    parser.add_argument("--no_norm", action="store_true")
+    parser.add_argument("--gate_type", choices=["sigmoid", "swiglu"], default="swiglu")
+    parser.add_argument("--single_readout_mode", choices=["low_rank", "full"], default="low_rank")
+    parser.add_argument("--zero_gate_hidden", type=int, default=16)
+    parser.add_argument("--verbose", action="store_true")
+    args = parser.parse_args()
+
+    model = build_model_from_args(args, bits_per_symbol=2)
+    summary = summarize_model(model, verbose=False)
+    print_summary(summary, show_layers=args.verbose)
+
+
+if __name__ == "__main__":
+    main()

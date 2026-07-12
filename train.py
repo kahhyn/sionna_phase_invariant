@@ -5,74 +5,8 @@ import torch
 from torch.utils.data import DataLoader
 
 from data import OFDMDataset
-from models import (
-    ComplexCNNNoInteraction,
-    PhysicalFeatureCNN,
-    PhaseInvariantReceiver,
-    RealImagCNN,
-    SingleBranchPhaseInvariantReceiver,
-)
+from models.factory import MODEL_CHOICES, build_model, build_model_from_args
 from utils.metrics import masked_bce_with_logits, masked_ber
-
-
-def build_model(
-    name,
-    bits_per_symbol,
-    hidden=32,
-    hidden_complex=16,
-    zero_complex=16,
-    branch_layers=2,
-    kernel_size=3,
-    use_norm=True,
-    gate_type="swiglu",
-    single_readout_mode="low_rank",
-):
-    if name == "real_imag_cnn":
-        return RealImagCNN(hidden=hidden, bits_per_symbol=bits_per_symbol)
-    if name == "physical_cnn":
-        return PhysicalFeatureCNN(
-            hidden=hidden,
-            zero_complex=zero_complex,
-            hidden_real=hidden,
-            bits_per_symbol=bits_per_symbol,
-            branch_layers=branch_layers,
-            kernel_size=kernel_size,
-            use_norm=use_norm,
-        )
-    if name == "phase_invariant":
-        return PhaseInvariantReceiver(
-            hidden_complex=hidden_complex,
-            zero_complex=zero_complex,
-            hidden_real=hidden,
-            bits_per_symbol=bits_per_symbol,
-            branch_layers=branch_layers,
-            kernel_size=kernel_size,
-            use_norm=use_norm,
-            gate_type=gate_type
-        )
-    if name == "complex_no_interaction":
-        return ComplexCNNNoInteraction(
-            hidden_complex=hidden_complex,
-            hidden_real=hidden,
-            bits_per_symbol=bits_per_symbol,
-            branch_layers=branch_layers,
-            kernel_size=kernel_size,
-            use_norm=use_norm,
-            gate_type=gate_type,
-        )
-    if name == "single_branch":
-        return SingleBranchPhaseInvariantReceiver(
-            hidden_complex=hidden_complex,
-            zero_real=zero_complex,
-            hidden_real=hidden,
-            bits_per_symbol=bits_per_symbol,
-            num_blocks=branch_layers,
-            kernel_size=kernel_size,
-            use_norm=use_norm,
-            gate_type=gate_type,
-            readout_mode=single_readout_mode,
-        )
-    raise ValueError(f"Unknown model: {name}")
 
 
 def move_batch(batch, device):
@@ -138,13 +72,7 @@ def evaluate(model, loader, device):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="phase_invariant",
-                        choices=[
-                            "real_imag_cnn",
-                            "physical_cnn",
-                            "phase_invariant",
-                            "complex_no_interaction",
-                            "single_branch",
-                        ])
+                        choices=MODEL_CHOICES)
 
     parser.add_argument("--train_phase_mode", type=str, default="fixed",
                         choices=["fixed", "narrow", "uniform"])
@@ -174,6 +102,7 @@ def main():
                         choices=["sigmoid", "swiglu"])
     parser.add_argument("--single_readout_mode", type=str, default="low_rank",
                         choices=["low_rank", "full"])
+    parser.add_argument("--zero_gate_hidden", type=int, default=16)
 
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight_decay", type=float, default=0.0)
@@ -225,18 +154,7 @@ def main():
         pin_memory=(device.type == "cuda"),
     )
 
-    model = build_model(
-        args.model,
-        bits_per_symbol=2,
-        hidden=args.hidden,
-        hidden_complex=args.hidden_complex,
-        zero_complex=args.zero_complex,
-        branch_layers=args.branch_layers,
-        kernel_size=args.kernel_size,
-        use_norm=not args.no_norm,
-        gate_type=args.gate_type,
-        single_readout_mode=args.single_readout_mode,
-    ).to(device)
+    model = build_model_from_args(args, bits_per_symbol=2).to(device)
 
     optimizer = torch.optim.AdamW(
         model.parameters(),
