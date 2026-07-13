@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SOURCE_ROOT="${SOURCE_ROOT:-runs/sionna_invariance_matched_m10_p20}"
+SOURCE_ROOT="${SOURCE_ROOT:-checkpoints/continual_source}"
 RUN_ROOT="${RUN_ROOT:-runs/sionna_continual_fewshot}"
 TRAIN_SEEDS="${TRAIN_SEEDS:-0,1,2}"
 TARGET_DELAY_NS="${TARGET_DELAY_NS:-50,100,300}"
@@ -24,7 +24,7 @@ IFS=',' read -r -a seeds <<< "${TRAIN_SEEDS}"
 run_one() {
   local model="$1"
   local seed="$2"
-  local checkpoint="${SOURCE_ROOT}/${model}_seed${seed}/best.pt"
+  local checkpoint="${SOURCE_ROOT}/${model}_seed${seed}.pt"
   local output_dir="${RUN_ROOT}/${model}_seed${seed}"
 
   if [[ ! -f "${checkpoint}" ]]; then

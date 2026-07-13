@@ -20,3 +20,7 @@ The experiment writes:
 Use `scripts/run_sionna_fewshot_adaptation.sh` for the formal multi-seed run.
 Set `FORCE=1` to replace existing results or `SAVE_CHECKPOINTS=1` to retain all
 adapted checkpoints. Checkpoints are not saved by default to avoid disk growth.
+
+The six source checkpoints required by the default three-seed run are tracked
+under `checkpoints/continual_source/`. Set `SOURCE_ROOT` only when evaluating a
+different set of pretrained source receivers.

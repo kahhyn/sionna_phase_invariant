@@ -5,6 +5,9 @@ __pycache__/
 runs/
 *.pt
 *.pth
+!checkpoints/
+!checkpoints/continual_source/
+!checkpoints/continual_source/*.pt
 *.csv
 SANITY_CHECK*.txt
 .DS_Store
