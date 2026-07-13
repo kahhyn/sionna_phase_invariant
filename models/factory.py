@@ -7,9 +7,15 @@ from .complex_no_interaction_cnn import (
     ComplexCNNWithZeroInput,
 )
 from .phase_invariant_net import PhaseInvariantReceiver
+from .phase_equivariant_denoiser import (
+    EquivariantHResidualDenoiser,
+    HRefinedReceiver,
+)
 from .single_invariant_net import (
+    MatchedN0GatedComplexCNN,
     N0GatedSingleBranchPhaseInvariantReceiver,
     SingleBranchPhaseInvariantReceiver,
+    StrictMatchedN0GatedComplexCNN,
 )
 
 
@@ -27,12 +33,31 @@ MODEL_CHOICES = (
     "single_branch_n0_gate",
     "single_branch_p_only_gate",
     "single_branch_n0_only_gate",
+    "matched_complex_p_n0_gate",
+    "matched_complex_p_only_gate",
+    "matched_complex_n0_only_gate",
+    "strict_matched_complex_p_n0_gate",
+    "single_branch_n0_gate_h_denoise",
+    "strict_matched_complex_p_n0_gate_h_denoise",
 )
+
+DENOISED_BASE_MODEL = {
+    "single_branch_n0_gate_h_denoise": "single_branch_n0_gate",
+    "strict_matched_complex_p_n0_gate_h_denoise": (
+        "strict_matched_complex_p_n0_gate"
+    ),
+}
 
 GATE_CONDITION_BY_MODEL = {
     "single_branch_n0_gate": "p_n0",
     "single_branch_p_only_gate": "p_only",
     "single_branch_n0_only_gate": "n0_only",
+}
+
+MATCHED_GATE_CONDITION_BY_MODEL = {
+    "matched_complex_p_n0_gate": "p_n0",
+    "matched_complex_p_only_gate": "p_only",
+    "matched_complex_n0_only_gate": "n0_only",
 }
 
 COMPLEX_INPUT_CONDITION_BY_MODEL = {
@@ -59,8 +84,36 @@ def build_model(
     gate_type="swiglu",
     single_readout_mode="low_rank",
     zero_gate_hidden=16,
+    denoiser_hidden=16,
+    denoiser_blocks=2,
 ):
     """Build a receiver by its public experiment alias."""
+    if name in DENOISED_BASE_MODEL:
+        receiver = build_model(
+            DENOISED_BASE_MODEL[name],
+            bits_per_symbol=bits_per_symbol,
+            hidden=hidden,
+            hidden_complex=hidden_complex,
+            zero_complex=zero_complex,
+            branch_layers=branch_layers,
+            kernel_size=kernel_size,
+            use_norm=use_norm,
+            gate_type=gate_type,
+            single_readout_mode=single_readout_mode,
+            zero_gate_hidden=zero_gate_hidden,
+            denoiser_hidden=denoiser_hidden,
+            denoiser_blocks=denoiser_blocks,
+        )
+        denoiser = EquivariantHResidualDenoiser(
+            hidden_complex=denoiser_hidden,
+            num_blocks=denoiser_blocks,
+            kernel_size=kernel_size,
+            use_norm=use_norm,
+            gate_type=gate_type,
+            condition_hidden=zero_gate_hidden,
+            condition_mode="p_n0",
+        )
+        return HRefinedReceiver(receiver=receiver, denoiser=denoiser)
     if name == "real_imag_cnn":
         return RealImagCNN(hidden=hidden, bits_per_symbol=bits_per_symbol)
     if name == "physical_cnn":
@@ -130,6 +183,32 @@ def build_model(
             gate_type=gate_type,
             readout_mode=single_readout_mode,
         )
+    if name in MATCHED_GATE_CONDITION_BY_MODEL:
+        return MatchedN0GatedComplexCNN(
+            hidden_complex=hidden_complex,
+            zero_real=zero_complex,
+            hidden_real=hidden,
+            bits_per_symbol=bits_per_symbol,
+            num_blocks=branch_layers,
+            kernel_size=kernel_size,
+            use_norm=use_norm,
+            gate_type=gate_type,
+            zero_gate_hidden=zero_gate_hidden,
+            zero_gate_condition=MATCHED_GATE_CONDITION_BY_MODEL[name],
+        )
+    if name == "strict_matched_complex_p_n0_gate":
+        return StrictMatchedN0GatedComplexCNN(
+            hidden_complex=hidden_complex,
+            zero_real=zero_complex,
+            hidden_real=hidden,
+            bits_per_symbol=bits_per_symbol,
+            num_blocks=branch_layers,
+            kernel_size=kernel_size,
+            use_norm=use_norm,
+            gate_type=gate_type,
+            zero_gate_hidden=zero_gate_hidden,
+            zero_gate_condition="p_n0",
+        )
     if name in GATE_CONDITION_BY_MODEL:
         return N0GatedSingleBranchPhaseInvariantReceiver(
             hidden_complex=hidden_complex,
@@ -163,4 +242,6 @@ def build_model_from_args(args, bits_per_symbol=2):
         gate_type=args["gate_type"],
         single_readout_mode=args["single_readout_mode"],
         zero_gate_hidden=args.get("zero_gate_hidden", 16),
+        denoiser_hidden=args.get("denoiser_hidden", 16),
+        denoiser_blocks=args.get("denoiser_blocks", 2),
     )

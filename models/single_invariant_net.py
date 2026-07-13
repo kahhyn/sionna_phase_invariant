@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 
@@ -150,8 +152,8 @@ class HermitianInvariantReadout(nn.Module):
                 padding=1,
                 bias=False,
             )
-            self.norm_porj_a = ComplexRMSNorm2d(out_channels)
-            self.norm_porj_b = ComplexRMSNorm2d(out_channels)
+            self.norm_proj_a = ComplexRMSNorm2d(out_channels)
+            self.norm_proj_b = ComplexRMSNorm2d(out_channels)
             
         else:
             raise ValueError("mode must be 'full' or 'low_rank'.")
@@ -172,8 +174,8 @@ class HermitianInvariantReadout(nn.Module):
         if self.mode == "low_rank":
             a = self.proj_a(z)
             b = self.proj_b(z)
-            a = self.norm_porj_a(a)
-            b = self.norm_porj_b(b)
+            a = self.norm_proj_a(a)
+            b = self.norm_proj_b(b)
             
 
             g = a * torch.conj(b)
@@ -181,6 +183,39 @@ class HermitianInvariantReadout(nn.Module):
             # g is zero-order complex feature.
             # We expose real and imaginary parts to real LLR head.
             return torch.cat([g.real, g.imag], dim=1)
+
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ):
+        """Accept checkpoints saved before the ``norm_proj`` typo fix."""
+        for old_name, new_name in (
+            ("norm_porj_a", "norm_proj_a"),
+            ("norm_porj_b", "norm_proj_b"),
+        ):
+            old_prefix = prefix + old_name + "."
+            new_prefix = prefix + new_name + "."
+            for key in list(state_dict):
+                if key.startswith(old_prefix):
+                    new_key = new_prefix + key[len(old_prefix) :]
+                    state_dict.setdefault(new_key, state_dict[key])
+                    del state_dict[key]
+
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
 
 
 class ZeroOrderAmplitudeGate(nn.Module):
@@ -380,7 +415,8 @@ class N0GatedSingleBranchPhaseInvariantReceiver(SingleBranchPhaseInvariantReceiv
             ]
         )
 
-    def forward(self, Y, H_hat, P, N0):
+    def _forward_gated_backbone(self, Y, H_hat, P, N0):
+        """Run the shared P/N0-gated charge-one complex backbone."""
         z = _prepare_complex_input(Y, H_hat)
         batch_size, _, num_symbols, num_subcarriers = z.shape
         P, N0_grid = _prepare_zero_features(
@@ -410,10 +446,128 @@ class N0GatedSingleBranchPhaseInvariantReceiver(SingleBranchPhaseInvariantReceiv
             z = block(z)
             z = zero_gate(z, zero_features)
 
+        return z, P, N0_grid
+
+    def forward(self, Y, H_hat, P, N0):
+        z, P, N0_grid = self._forward_gated_backbone(Y, H_hat, P, N0)
+
         invariant_feat = self.readout(z)
         invariant_feat = self.mixchannel(invariant_feat)
         llr_features = torch.cat(
             [invariant_feat, P, N0_grid],
             dim=1,
         )
+        return self.llr_head(llr_features)
+
+
+class MatchedN0GatedComplexCNN(N0GatedSingleBranchPhaseInvariantReceiver):
+    """Non-invariant direct-readout baseline with a matched gated backbone.
+
+    The complex input projection, residual blocks, P/N0 gates, amplitude
+    nonlinearities, real-valued channel mixer, and LLR head are shared with
+    the invariant receiver. The Hermitian readout is replaced by a direct
+    split into real and imaginary channels.
+
+    This matches feature widths and the backbone, but intentionally has fewer
+    parameters because it does not contain the two learned readout projections.
+    """
+
+    def __init__(
+        self,
+        hidden_complex=32,
+        zero_real=32,
+        hidden_real=32,
+        bits_per_symbol=2,
+        num_blocks=3,
+        kernel_size=3,
+        use_norm=True,
+        gate_type="swiglu",
+        zero_gate_hidden=16,
+        zero_gate_condition="p_n0",
+    ):
+        if zero_real != hidden_complex:
+            raise ValueError(
+                "MatchedN0GatedComplexCNN requires zero_real == "
+                "hidden_complex. Set --zero_complex equal to "
+                "--hidden_complex."
+            )
+
+        super().__init__(
+            hidden_complex=hidden_complex,
+            zero_real=zero_real,
+            hidden_real=hidden_real,
+            bits_per_symbol=bits_per_symbol,
+            num_blocks=num_blocks,
+            kernel_size=kernel_size,
+            use_norm=use_norm,
+            gate_type=gate_type,
+            readout_mode="low_rank",
+            zero_gate_hidden=zero_gate_hidden,
+            zero_gate_condition=zero_gate_condition,
+        )
+
+        # The direct Re/Im split already supplies 2 * zero_real channels.
+        del self.readout
+
+    def forward(self, Y, H_hat, P, N0):
+        z, P, N0_grid = self._forward_gated_backbone(Y, H_hat, P, N0)
+        direct_feat = torch.cat([z.real, z.imag], dim=1)
+        direct_feat = self.mixchannel(direct_feat)
+        llr_features = torch.cat([direct_feat, P, N0_grid], dim=1)
+        return self.llr_head(llr_features)
+
+
+class StrictMatchedN0GatedComplexCNN(
+    N0GatedSingleBranchPhaseInvariantReceiver
+):
+    """Parameter-matched non-invariant readout baseline.
+
+    This model retains both learned equivariant projections and their complex
+    RMS normalizers. Instead of forming the invariant Hermitian product
+    ``a * conj(b)``, it forms the equivariant, phase-sensitive combination
+    ``(a + b) / sqrt(2)`` before exposing real and imaginary parts.
+
+    Consequently, with the same constructor arguments, its trainable parameter
+    count is exactly equal to the low-rank invariant receiver.
+    """
+
+    def __init__(
+        self,
+        hidden_complex=32,
+        zero_real=32,
+        hidden_real=32,
+        bits_per_symbol=2,
+        num_blocks=3,
+        kernel_size=3,
+        use_norm=True,
+        gate_type="swiglu",
+        zero_gate_hidden=16,
+        zero_gate_condition="p_n0",
+    ):
+        super().__init__(
+            hidden_complex=hidden_complex,
+            zero_real=zero_real,
+            hidden_real=hidden_real,
+            bits_per_symbol=bits_per_symbol,
+            num_blocks=num_blocks,
+            kernel_size=kernel_size,
+            use_norm=use_norm,
+            gate_type=gate_type,
+            readout_mode="low_rank",
+            zero_gate_hidden=zero_gate_hidden,
+            zero_gate_condition=zero_gate_condition,
+        )
+
+    def forward(self, Y, H_hat, P, N0):
+        z, P, N0_grid = self._forward_gated_backbone(Y, H_hat, P, N0)
+
+        # Reuse exactly the same learned modules as the invariant readout;
+        # only the final algebraic operation is changed.
+        a = self.readout.norm_proj_a(self.readout.proj_a(z))
+        b = self.readout.norm_proj_b(self.readout.proj_b(z))
+        direct = (a + b) / math.sqrt(2.0)
+
+        direct_feat = torch.cat([direct.real, direct.imag], dim=1)
+        direct_feat = self.mixchannel(direct_feat)
+        llr_features = torch.cat([direct_feat, P, N0_grid], dim=1)
         return self.llr_head(llr_features)
