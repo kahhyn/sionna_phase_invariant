@@ -3,7 +3,6 @@ import unittest
 import torch
 
 from models.factory import build_model
-from models.phase_equivariant_denoiser import EquivariantHResidualDenoiser
 
 
 class ModelFactoryTest(unittest.TestCase):
@@ -65,21 +64,7 @@ class ModelFactoryTest(unittest.TestCase):
                 )
                 self.assertTrue(torch.isfinite(logits).all())
 
-    def test_h_denoiser_starts_as_equivariant_identity(self):
-        _, h_hat, p, n0 = self._inputs()
-        denoiser = EquivariantHResidualDenoiser(
-            hidden_complex=4,
-            num_blocks=1,
-            condition_hidden=3,
-        )
-        refined = denoiser(h_hat, p, n0)
-        torch.testing.assert_close(refined, h_hat)
-
-        phase = torch.exp(1j * torch.tensor(0.71))
-        rotated = denoiser(phase * h_hat, p, n0)
-        torch.testing.assert_close(rotated, phase * refined)
-
-    def test_denoised_a_c_models_are_parameter_matched(self):
+    def test_strict_a_c_models_are_parameter_matched(self):
         y, h_hat, p, n0 = self._inputs()
         kwargs = {
             "bits_per_symbol": 2,
@@ -88,24 +73,22 @@ class ModelFactoryTest(unittest.TestCase):
             "zero_complex": 6,
             "branch_layers": 1,
             "zero_gate_hidden": 4,
-            "denoiser_hidden": 4,
-            "denoiser_blocks": 1,
         }
-        invariant = build_model(
-            "single_branch_n0_gate_h_denoise", **kwargs
-        )
-        matched = build_model(
-            "strict_matched_complex_p_n0_gate_h_denoise", **kwargs
-        )
+        invariant = build_model("single_branch_n0_gate", **kwargs)
+        matched = build_model("strict_matched_complex_p_n0_gate", **kwargs)
         invariant_count = sum(p.numel() for p in invariant.parameters())
         matched_count = sum(p.numel() for p in matched.parameters())
         self.assertEqual(invariant_count, matched_count)
 
         for model in (invariant, matched):
-            logits, aux = model.forward_with_aux(y, h_hat, p, n0)
+            logits = model(y, h_hat, p, n0)
             self.assertEqual(logits.shape, (2, 2, 4, 5))
-            self.assertEqual(aux["H_refined"].shape, h_hat.shape)
             self.assertTrue(torch.isfinite(logits).all())
+
+        phase = torch.exp(1j * torch.tensor(0.71))
+        reference = invariant(y, h_hat, p, n0)
+        rotated = invariant(phase * y, phase * h_hat, p, n0)
+        torch.testing.assert_close(rotated, reference, atol=1e-5, rtol=1e-5)
 
 
 if __name__ == "__main__":
