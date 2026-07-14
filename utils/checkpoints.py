@@ -2,6 +2,7 @@
 
 import torch
 
+from data import PROFILE_SCHEMA_VERSION, validate_channel_profile
 from models.factory import build_model_from_args
 
 
@@ -24,6 +25,21 @@ def load_receiver_checkpoint(
                 f"Checkpoint data_backend={data_backend!r}, "
                 f"expected {required_data_backend!r}."
             )
+
+    profile_version = checkpoint.get("channel_profile_schema_version")
+    if profile_version is not None:
+        if profile_version != PROFILE_SCHEMA_VERSION:
+            raise ValueError(
+                f"Checkpoint channel profile schema={profile_version!r}, "
+                f"expected {PROFILE_SCHEMA_VERSION}."
+            )
+        validate_channel_profile(checkpoint["train_channel_profile"])
+        validate_channel_profile(checkpoint["val_channel_profile"])
+    saved_bits = checkpoint.get("sionna_config", {}).get("bits_per_symbol")
+    if saved_bits is not None and int(saved_bits) != int(bits_per_symbol):
+        raise ValueError(
+            f"Checkpoint bits_per_symbol={saved_bits}, expected {bits_per_symbol}."
+        )
 
     model = build_model_from_args(
         checkpoint["args"],

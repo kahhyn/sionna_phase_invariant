@@ -8,7 +8,7 @@ hand-written physical-layer data path with Sionna 2.x blocks.
 ```text
 legacy-labeled QPSK
   -> Sionna ResourceGrid / custom DMRS PilotPattern
-  -> 3GPP TR 38.901 TDL channel
+  -> 3GPP TR 38.901 TDL, UMi, or UMa channel profile
   -> Sionna AWGN
   -> Sionna LS estimation and interpolation
   -> legacy-compatible batch dictionary
@@ -19,6 +19,42 @@ The default setup is SISO, 14 OFDM symbols, 72 subcarriers, 30 kHz SCS,
 TDL-A with 10 ns delay spread, up to 200 Hz Doppler, and full-symbol DMRS at
 OFDM symbols 2 and 11. Noise power follows the legacy project's measured
 symbol-SNR convention rather than an `Eb/N0` conversion.
+
+## TDL / UMi / UMa channel profiles
+
+The generator accepts JSON profiles that select a fixed channel or balance a
+bank of channels at batch granularity. The normalized profiles under
+`configs/channel_profiles/` keep pathloss and shadow fading disabled and keep
+channel normalization enabled. They test small-scale channel-structure
+generalization; they do not represent a realistic coverage/link-budget test.
+
+Minimal UMi training:
+
+```bash
+python -m training.train_sionna \
+  --model single_branch_n0_gate \
+  --train_channel_profile configs/channel_profiles/umi_normalized.json \
+  --val_channel_profile configs/channel_profiles/umi_normalized.json \
+  --epochs 1 --num_train 128 --num_val 64 --batch_size 16 \
+  --snr_db_min -10 --snr_db_max 20 \
+  --save_dir runs/smoke_umi_single
+```
+
+To evaluate a checkpoint on one fixed domain from the TDL bank:
+
+```bash
+python -m evaluation.eval_ber_sionna \
+  --checkpoint runs/smoke_umi_single/best.pt \
+  --eval_channel_profile configs/channel_profiles/tdl_mix_normalized.json \
+  --eval_component_id tdl_C_100ns \
+  --snr_list=-4,0,4 --num_samples 256 --common_random_numbers \
+  --out_csv runs/smoke_umi_single/ber_tdl_C_100ns.csv
+```
+
+The complete 22-domain suite and pooled result matrices are managed by
+`scripts/run_channel_generalization.sh`. See
+`experiments/channel_generalization/README.md` and
+`docs/TDL_UMI_UMA_GENERALIZATION_PLAN.md`.
 
 ## Environment
 

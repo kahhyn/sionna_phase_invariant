@@ -6,7 +6,14 @@ from pathlib import Path
 
 import torch
 
-from data import SionnaOFDMBatchGenerator, SionnaOFDMConfig
+from data import (
+    SionnaOFDMBatchGenerator,
+    SionnaOFDMConfig,
+    legacy_channel_profile,
+    load_channel_profile,
+    profile_backend_label,
+    profile_component,
+)
 from utils.batching import batch_sizes
 from utils.checkpoints import load_receiver_checkpoint
 from utils.metrics import masked_bce_sum, masked_error_count
@@ -17,7 +24,17 @@ def parse_snr_list(text):
 
 
 @torch.no_grad()
-def evaluate_snr(model, config, snr_db, phase_mode, num_samples, batch_size, seed, device):
+def evaluate_snr(
+    model,
+    config,
+    channel_profile,
+    snr_db,
+    phase_mode,
+    num_samples,
+    batch_size,
+    seed,
+    device,
+):
     generator = SionnaOFDMBatchGenerator(
         config,
         snr_db_min=snr_db,
@@ -25,6 +42,7 @@ def evaluate_snr(model, config, snr_db, phase_mode, num_samples, batch_size, see
         phase_mode=phase_mode,
         seed=seed,
         device=device,
+        channel_profile=channel_profile,
     )
     model.eval()
     total_bce = 0.0
@@ -65,6 +83,14 @@ def main():
     )
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--out_csv", default="sionna_ber_results.csv")
+    parser.add_argument(
+        "--eval_channel_profile",
+        help="JSON channel profile overriding the checkpoint training channel.",
+    )
+    parser.add_argument(
+        "--eval_component_id",
+        help="Evaluate one fixed component from --eval_channel_profile.",
+    )
     args = parser.parse_args()
 
     device = torch.device(args.device)
@@ -78,6 +104,31 @@ def main():
     config = SionnaOFDMConfig(**checkpoint["sionna_config"])
     model_name = checkpoint["model_name"]
     train_seed = int(train_args.get("seed", -1))
+    train_profile = checkpoint.get("train_channel_profile")
+    if train_profile is None:
+        train_profile = legacy_channel_profile(config)
+    else:
+        train_profile = load_channel_profile(train_profile)
+    if args.eval_channel_profile:
+        eval_profile = load_channel_profile(
+            args.eval_channel_profile, component_id=args.eval_component_id
+        )
+    elif args.eval_component_id:
+        raise ValueError("--eval_component_id requires --eval_channel_profile")
+    else:
+        eval_profile = train_profile
+    fixed_component = profile_component(eval_profile)
+    backend = profile_backend_label(eval_profile)
+    scenario = fixed_component.get("backend", "mixed") if fixed_component else "mixed"
+    tdl_model = fixed_component.get("tdl_model", "") if fixed_component else ""
+    delay_ns = (
+        fixed_component.get("delay_spread_ns", "") if fixed_component else ""
+    )
+
+    print(
+        f"Train profile: {train_profile['name']} | "
+        f"test profile: {eval_profile['name']} | backend: {backend}"
+    )
 
     rows = []
     for index, snr_db in enumerate(parse_snr_list(args.snr_list)):
@@ -85,6 +136,7 @@ def main():
         bce, ber, errors, valid_bits = evaluate_snr(
             model,
             config,
+            eval_profile,
             snr_db,
             args.phase_mode,
             args.num_samples,
@@ -107,6 +159,12 @@ def main():
                 "train_seed": train_seed,
                 "eval_seed": eval_seed,
                 "common_random_numbers": int(args.common_random_numbers),
+                "train_profile": train_profile["name"],
+                "test_profile": eval_profile["name"],
+                "backend": backend,
+                "scenario": scenario,
+                "tdl_model": tdl_model,
+                "delay_ns": delay_ns,
             }
         )
 
@@ -125,6 +183,12 @@ def main():
                 "train_seed",
                 "eval_seed",
                 "common_random_numbers",
+                "train_profile",
+                "test_profile",
+                "backend",
+                "scenario",
+                "tdl_model",
+                "delay_ns",
             ],
         )
         writer.writeheader()

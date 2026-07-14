@@ -8,12 +8,11 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass
-from typing import Dict
+from typing import Any, Dict
 
 import torch
 from sionna.phy import config as sionna_config
-from sionna.phy.channel import AWGN, OFDMChannel
-from sionna.phy.channel.tr38901 import TDL
+from sionna.phy.channel import AWGN
 from sionna.phy.fec.ldpc import LDPC5GDecoder, LDPC5GEncoder
 from sionna.phy.mapping import Constellation, Mapper
 from sionna.phy.ofdm import (
@@ -23,6 +22,12 @@ from sionna.phy.ofdm import (
     ResourceGridMapper,
 )
 from sionna.phy.utils import ebnodb2no
+
+from .sionna_channel_backends import (
+    SionnaChannelBackend,
+    legacy_channel_profile,
+    load_channel_profile,
+)
 
 
 @dataclass(frozen=True)
@@ -85,6 +90,7 @@ class SionnaOFDMBatchGenerator:
         narrow_phase_range: float = math.pi / 8,
         seed: int = 0,
         device: torch.device | str = "cuda",
+        channel_profile: str | dict[str, Any] | None = None,
     ) -> None:
         self.config = config or SionnaOFDMConfig()
         self.device = torch.device(device)
@@ -95,6 +101,11 @@ class SionnaOFDMBatchGenerator:
         self.phase_mode = phase_mode
         self.narrow_phase_range = float(narrow_phase_range)
         self.seed = int(seed)
+        self.channel_profile = (
+            legacy_channel_profile(self.config)
+            if channel_profile is None
+            else load_channel_profile(channel_profile)
+        )
 
         if self.config.bits_per_symbol != 2:
             raise ValueError("The migrated receiver currently supports QPSK only.")
@@ -167,25 +178,11 @@ class SionnaOFDMBatchGenerator:
             self.resource_grid, device=str(self.device)
         )
 
-        max_speed_mps = (
-            cfg.max_doppler_hz * 299_792_458.0 / cfg.carrier_frequency_hz
-        )
-        self.tdl = TDL(
-            model=cfg.tdl_model,
-            delay_spread=cfg.delay_spread_s,
-            carrier_frequency=cfg.carrier_frequency_hz,
-            min_speed=0.0,
-            max_speed=max_speed_mps,
-            num_rx_ant=1,
-            num_tx_ant=1,
-            device=str(self.device),
-        )
-        self.ofdm_channel = OFDMChannel(
-            channel_model=self.tdl,
-            resource_grid=self.resource_grid,
-            normalize_channel=cfg.normalize_channel,
-            return_channel=True,
-            device=str(self.device),
+        self.channel_backend = SionnaChannelBackend(
+            self.channel_profile,
+            cfg,
+            self.resource_grid,
+            self.device,
         )
         self.awgn = AWGN(device=str(self.device))
         self.ls_estimator = LSChannelEstimator(
@@ -208,6 +205,16 @@ class SionnaOFDMBatchGenerator:
         self._sionna_rng_state = sionna_config.torch_rng(
             str(self.device)
         ).get_state()
+        self.channel_backend.reset(self.seed + 31_337)
+
+    def reset_profile_sampler(self, seed: int | None = None) -> None:
+        """Start a deterministic balanced component order and clear counts."""
+        sampler_seed = self.seed + 31_337 if seed is None else int(seed)
+        self.channel_backend.reset_sampler(sampler_seed)
+
+    @property
+    def channel_profile_counts(self) -> dict[str, int]:
+        return dict(self.channel_backend.counts)
 
     def _activate_sionna_rng(self) -> torch.Generator:
         rng = sionna_config.torch_rng(str(self.device))
@@ -252,7 +259,7 @@ class SionnaOFDMBatchGenerator:
     @torch.no_grad()
     def generate_batch(
         self, batch_size: int, *, return_aux: bool = False
-    ) -> Dict[str, torch.Tensor]:
+    ) -> Dict[str, Any]:
         if batch_size <= 0:
             raise ValueError("batch_size must be positive.")
 
@@ -275,7 +282,9 @@ class SionnaOFDMBatchGenerator:
             ].to(torch.float32)
 
         sionna_rng = self._activate_sionna_rng()
-        y_clean_full, h_full = self.ofdm_channel(x_rg)
+        y_clean_full, h_full, channel_metadata = self.channel_backend.apply(
+            x_rg, batch_size
+        )
 
         snr_db = self._sample_snr_db(batch_size)
         n0 = self._compute_noise_power(y_clean_full, snr_db)
@@ -313,6 +322,7 @@ class SionnaOFDMBatchGenerator:
             "snr_db": snr_db.view(batch_size, 1).to(torch.float32),
         }
         batch.update(bit_metadata)
+        batch.update(channel_metadata)
         if return_aux:
             batch.update(
                 {
@@ -344,6 +354,7 @@ class Sionna5GLDPCBatchGenerator(SionnaOFDMBatchGenerator):
         narrow_phase_range: float = math.pi / 8,
         seed: int = 0,
         device: torch.device | str = "cuda",
+        channel_profile: str | dict[str, Any] | None = None,
     ) -> None:
         self.ldpc_config = ldpc_config or SionnaLDPC5GConfig()
         super().__init__(
@@ -354,6 +365,7 @@ class Sionna5GLDPCBatchGenerator(SionnaOFDMBatchGenerator):
             narrow_phase_range=narrow_phase_range,
             seed=seed,
             device=device,
+            channel_profile=channel_profile,
         )
 
         self.n = int(
@@ -417,7 +429,7 @@ class Sionna5GLDPCBatchGenerator(SionnaOFDMBatchGenerator):
     @torch.no_grad()
     def generate_batch(
         self, batch_size: int, *, return_aux: bool = False
-    ) -> Dict[str, torch.Tensor]:
+    ) -> Dict[str, Any]:
         batch = super().generate_batch(batch_size, return_aux=return_aux)
         batch["ebno_db"] = batch["snr_db"].clone()
         return batch

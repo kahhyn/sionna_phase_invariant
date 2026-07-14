@@ -11,6 +11,10 @@ from data import (
     Sionna5GLDPCBatchGenerator,
     SionnaLDPC5GConfig,
     SionnaOFDMConfig,
+    legacy_channel_profile,
+    load_channel_profile,
+    profile_backend_label,
+    profile_component,
 )
 from models.classical_receivers import SionnaLMMSEBaseline
 from utils.checkpoints import load_receiver_checkpoint
@@ -50,6 +54,7 @@ def evaluate_ebno(
     receiver,
     receiver_type,
     ofdm_config,
+    channel_profile,
     ldpc_config,
     ebno_db,
     phase_mode,
@@ -67,6 +72,7 @@ def evaluate_ebno(
         phase_mode=phase_mode,
         seed=seed,
         device=device,
+        channel_profile=channel_profile,
     )
 
     num_blocks = 0
@@ -156,6 +162,14 @@ def main():
     parser.add_argument("--common_random_numbers", action="store_true")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--out_csv", default="sionna_ldpc_bler.csv")
+    parser.add_argument(
+        "--eval_channel_profile",
+        help="JSON channel profile overriding the checkpoint training channel.",
+    )
+    parser.add_argument(
+        "--eval_component_id",
+        help="Evaluate one fixed component from --eval_channel_profile.",
+    )
     args = parser.parse_args()
 
     if args.batch_size <= 0 or args.max_blocks <= 0:
@@ -178,6 +192,30 @@ def main():
         num_iter=args.decoder_iterations,
         cn_update=args.cn_update,
     )
+    train_profile = None if checkpoint is None else checkpoint.get("train_channel_profile")
+    if train_profile is None:
+        train_profile = legacy_channel_profile(ofdm_config)
+    else:
+        train_profile = load_channel_profile(train_profile)
+    if args.eval_channel_profile:
+        eval_profile = load_channel_profile(
+            args.eval_channel_profile, component_id=args.eval_component_id
+        )
+    elif args.eval_component_id:
+        raise ValueError("--eval_component_id requires --eval_channel_profile")
+    else:
+        eval_profile = train_profile
+    fixed_component = profile_component(eval_profile)
+    backend = profile_backend_label(eval_profile)
+    scenario = fixed_component.get("backend", "mixed") if fixed_component else "mixed"
+    tdl_model = fixed_component.get("tdl_model", "") if fixed_component else ""
+    delay_ns = (
+        fixed_component.get("delay_spread_ns", "") if fixed_component else ""
+    )
+    print(
+        f"Train profile: {train_profile['name']} | "
+        f"test profile: {eval_profile['name']} | backend: {backend}"
+    )
 
     rows = []
     for index, ebno_db in enumerate(parse_float_list(args.ebno_list)):
@@ -186,6 +224,7 @@ def main():
             model,
             args.receiver,
             ofdm_config,
+            eval_profile,
             ldpc_config,
             ebno_db,
             args.phase_mode,
@@ -206,6 +245,16 @@ def main():
                 "train_seed": train_seed,
                 "eval_seed": eval_seed,
                 "common_random_numbers": int(args.common_random_numbers),
+                "train_profile": (
+                    train_profile["name"]
+                    if args.receiver == "neural"
+                    else "classical_no_training"
+                ),
+                "test_profile": eval_profile["name"],
+                "backend": backend,
+                "scenario": scenario,
+                "tdl_model": tdl_model,
+                "delay_ns": delay_ns,
             }
         )
         print(

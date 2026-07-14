@@ -1,6 +1,6 @@
 # TDL ↔ UMi/UMa 信道泛化实验实施计划
 
-> 状态：设计评审稿，当前只定义实验和代码改造方案，不实现代码。
+> 状态：第一阶段代码已实现并通过 TDL/UMi/UMa smoke；正式多 seed 实验待运行。
 >
 > 适用项目：`~/projects/phase_invariant_receiver_sionna`
 >
@@ -347,7 +347,7 @@ configs/channel_suites/generalization_normalized.json
 
 ## 6.4 修改 `training/train_sionna.py`
 
-新增计划接口：
+已实现接口：
 
 ```text
 --train_channel_profile PATH
@@ -377,13 +377,14 @@ channel_profile_hash
 
 ```text
 --eval_channel_profile PATH
---eval_channel_suite PATH
+--eval_component_id ID
 ```
 
 修改内容：
 
 - 默认仍可使用 checkpoint 的训练配置；
-- 指定 profile/suite 时覆盖信道分布，但不改变 OFDM/QPSK/DMRS 语义；
+- 指定 profile/component 时覆盖信道分布，但不改变 OFDM/QPSK/DMRS 语义；
+- suite 由 `scripts/run_channel_generalization.sh` 展开，避免单次评估进程混写多个 domain；
 - 每个固定测试 domain 单独生成 CSV；
 - CSV 增加：`train_profile/test_profile/backend/scenario/tdl_model/delay_ns`；
 - `--common_random_numbers` 对 UMi/UMa 也必须复现 topology；
@@ -464,7 +465,7 @@ experiments/channel_generalization/README.md
 
 ## 7. 预计实现后的运行命令
 
-以下命令定义计划中的最终 CLI；当前代码尚未实现这些参数，因此现在不要执行。
+以下命令使用当前已实现的 CLI，可以直接执行。
 
 ### 7.1 接口和单元测试
 

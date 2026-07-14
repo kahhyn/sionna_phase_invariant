@@ -6,7 +6,14 @@ from pathlib import Path
 
 import torch
 
-from data import SionnaOFDMBatchGenerator, SionnaOFDMConfig
+from data import (
+    PROFILE_SCHEMA_VERSION,
+    SionnaOFDMBatchGenerator,
+    SionnaOFDMConfig,
+    channel_profile_hash,
+    legacy_channel_profile,
+    load_channel_profile,
+)
 from models.factory import MODEL_CHOICES, build_model_from_args
 from utils.batching import batch_sizes
 from utils.metrics import masked_bce_with_logits, masked_error_count
@@ -30,7 +37,16 @@ def build_data_config(args):
     )
 
 
-def build_generator(args, config, phase_mode, seed, device, snr_min=None, snr_max=None):
+def build_generator(
+    args,
+    config,
+    phase_mode,
+    seed,
+    device,
+    channel_profile,
+    snr_min=None,
+    snr_max=None,
+):
     return SionnaOFDMBatchGenerator(
         config,
         snr_db_min=args.snr_db_min if snr_min is None else snr_min,
@@ -38,6 +54,7 @@ def build_generator(args, config, phase_mode, seed, device, snr_min=None, snr_ma
         phase_mode=phase_mode,
         seed=seed,
         device=device,
+        channel_profile=channel_profile,
     )
 
 
@@ -126,6 +143,14 @@ def parse_args():
     parser.add_argument("--max_doppler_hz", type=float, default=200.0)
     parser.add_argument("--ls_interpolation_type", default="lin", choices=["nn", "lin", "lin_time_avg"])
     parser.add_argument("--no_normalize_channel", action="store_true")
+    parser.add_argument(
+        "--train_channel_profile",
+        help="JSON profile overriding the legacy TDL channel arguments.",
+    )
+    parser.add_argument(
+        "--val_channel_profile",
+        help="Validation JSON profile (defaults to the training profile).",
+    )
 
     parser.add_argument("--hidden", type=int, default=32)
     parser.add_argument("--hidden_complex", type=int, default=16)
@@ -164,11 +189,31 @@ def main():
     save_dir = Path(args.save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
     data_config = build_data_config(args)
+    train_profile = (
+        load_channel_profile(args.train_channel_profile)
+        if args.train_channel_profile
+        else legacy_channel_profile(data_config)
+    )
+    val_profile = (
+        load_channel_profile(args.val_channel_profile)
+        if args.val_channel_profile
+        else train_profile
+    )
     train_generator = build_generator(
-        args, data_config, args.train_phase_mode, args.seed, device
+        args,
+        data_config,
+        args.train_phase_mode,
+        args.seed,
+        device,
+        train_profile,
     )
     val_generator = build_generator(
-        args, data_config, args.val_phase_mode, args.seed + 100000, device
+        args,
+        data_config,
+        args.val_phase_mode,
+        args.seed + 100000,
+        device,
+        val_profile,
     )
 
     model = build_model_from_args(args, bits_per_symbol=2).to(device)
@@ -179,7 +224,10 @@ def main():
     best_val_loss = math.inf
     print(f"Device: {device}")
     print(f"Model: {args.model}")
-    print("Data backend: Sionna 2.x / TDL-" + args.tdl_model)
+    print(
+        f"Data backend: Sionna 2.x | train profile: {train_profile['name']} | "
+        f"validation profile: {val_profile['name']}"
+    )
     print(
         f"Train phase: {args.train_phase_mode} | "
         f"Validation phase: {args.val_phase_mode}"
@@ -187,6 +235,7 @@ def main():
 
     for epoch in range(1, args.epochs + 1):
         print(f"\nEpoch {epoch}/{args.epochs}")
+        train_generator.reset_profile_sampler(args.seed + epoch * 1009)
         train_loss, train_ber = train_one_epoch_sionna(
             model,
             train_generator,
@@ -203,6 +252,10 @@ def main():
             f"train BER {train_ber:.5f} | val loss {val_loss:.5f} | "
             f"val BER {val_ber:.5f}"
         )
+        print(
+            f"  train profile batches: {train_generator.channel_profile_counts} | "
+            f"validation profile batches: {val_generator.channel_profile_counts}"
+        )
 
         checkpoint = {
             "model_name": args.model,
@@ -210,6 +263,12 @@ def main():
             "args": vars(args),
             "sionna_config": data_config.to_dict(),
             "data_backend": "sionna",
+            "channel_profile_schema_version": PROFILE_SCHEMA_VERSION,
+            "train_channel_profile": train_profile,
+            "val_channel_profile": val_profile,
+            "channel_profile_hash": channel_profile_hash(train_profile),
+            "train_profile_counts": train_generator.channel_profile_counts,
+            "val_profile_counts": val_generator.channel_profile_counts,
         }
         torch.save(checkpoint, save_dir / "last.pt")
         if val_loss < best_val_loss:

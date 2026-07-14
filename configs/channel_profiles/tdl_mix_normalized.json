@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "name": "tdl_mix_normalized",
+  "sampling": "balanced_batch",
+  "components": [
+    {"id": "tdl_A_10ns", "backend": "tdl", "weight": 1.0, "tdl_model": "A", "delay_spread_ns": 10, "max_doppler_hz": 200, "normalize_channel": true},
+    {"id": "tdl_A_30ns", "backend": "tdl", "weight": 1.0, "tdl_model": "A", "delay_spread_ns": 30, "max_doppler_hz": 200, "normalize_channel": true},
+    {"id": "tdl_A_100ns", "backend": "tdl", "weight": 1.0, "tdl_model": "A", "delay_spread_ns": 100, "max_doppler_hz": 200, "normalize_channel": true},
+    {"id": "tdl_A_300ns", "backend": "tdl", "weight": 1.0, "tdl_model": "A", "delay_spread_ns": 300, "max_doppler_hz": 200, "normalize_channel": true},
+    {"id": "tdl_B_10ns", "backend": "tdl", "weight": 1.0, "tdl_model": "B", "delay_spread_ns": 10, "max_doppler_hz": 200, "normalize_channel": true},
+    {"id": "tdl_B_30ns", "backend": "tdl", "weight": 1.0, "tdl_model": "B", "delay_spread_ns": 30, "max_doppler_hz": 200, "normalize_channel": true},
+    {"id": "tdl_B_100ns", "backend": "tdl", "weight": 1.0, "tdl_model": "B", "delay_spread_ns": 100, "max_doppler_hz": 200, "normalize_channel": true},
+    {"id": "tdl_B_300ns", "backend": "tdl", "weight": 1.0, "tdl_model": "B", "delay_spread_ns": 300, "max_doppler_hz": 200, "normalize_channel": true},
+    {"id": "tdl_C_10ns", "backend": "tdl", "weight": 1.0, "tdl_model": "C", "delay_spread_ns": 10, "max_doppler_hz": 200, "normalize_channel": true},
+    {"id": "tdl_C_30ns", "backend": "tdl", "weight": 1.0, "tdl_model": "C", "delay_spread_ns": 30, "max_doppler_hz": 200, "normalize_channel": true},
+    {"id": "tdl_C_100ns", "backend": "tdl", "weight": 1.0, "tdl_model": "C", "delay_spread_ns": 100, "max_doppler_hz": 200, "normalize_channel": true},
+    {"id": "tdl_C_300ns", "backend": "tdl", "weight": 1.0, "tdl_model": "C", "delay_spread_ns": 300, "max_doppler_hz": 200, "normalize_channel": true},
+    {"id": "tdl_D_10ns", "backend": "tdl", "weight": 1.0, "tdl_model": "D", "delay_spread_ns": 10, "max_doppler_hz": 200, "normalize_channel": true},
+    {"id": "tdl_D_30ns", "backend": "tdl", "weight": 1.0, "tdl_model": "D", "delay_spread_ns": 30, "max_doppler_hz": 200, "normalize_channel": true},
+    {"id": "tdl_D_100ns", "backend": "tdl", "weight": 1.0, "tdl_model": "D", "delay_spread_ns": 100, "max_doppler_hz": 200, "normalize_channel": true},
+    {"id": "tdl_D_300ns", "backend": "tdl", "weight": 1.0, "tdl_model": "D", "delay_spread_ns": 300, "max_doppler_hz": 200, "normalize_channel": true},
+    {"id": "tdl_E_10ns", "backend": "tdl", "weight": 1.0, "tdl_model": "E", "delay_spread_ns": 10, "max_doppler_hz": 200, "normalize_channel": true},
+    {"id": "tdl_E_30ns", "backend": "tdl", "weight": 1.0, "tdl_model": "E", "delay_spread_ns": 30, "max_doppler_hz": 200, "normalize_channel": true},
+    {"id": "tdl_E_100ns", "backend": "tdl", "weight": 1.0, "tdl_model": "E", "delay_spread_ns": 100, "max_doppler_hz": 200, "normalize_channel": true},
+    {"id": "tdl_E_300ns", "backend": "tdl", "weight": 1.0, "tdl_model": "E", "delay_spread_ns": 300, "max_doppler_hz": 200, "normalize_channel": true}
+  ]
+}

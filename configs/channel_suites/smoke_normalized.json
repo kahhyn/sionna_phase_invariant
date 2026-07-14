@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "name": "smoke_normalized",
+  "domains": [
+    {"id": "tdl_C_100ns", "profile": "configs/channel_profiles/tdl_mix_normalized.json", "component_id": "tdl_C_100ns"},
+    {"id": "umi_normalized", "profile": "configs/channel_profiles/umi_normalized.json", "component_id": "umi_normalized"},
+    {"id": "uma_normalized", "profile": "configs/channel_profiles/uma_normalized.json", "component_id": "uma_normalized"}
+  ]
+}

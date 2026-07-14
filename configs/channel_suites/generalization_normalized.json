@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "name": "generalization_normalized",
+  "domains": [
+    {"id": "tdl_A_10ns", "profile": "configs/channel_profiles/tdl_mix_normalized.json", "component_id": "tdl_A_10ns"},
+    {"id": "tdl_A_30ns", "profile": "configs/channel_profiles/tdl_mix_normalized.json", "component_id": "tdl_A_30ns"},
+    {"id": "tdl_A_100ns", "profile": "configs/channel_profiles/tdl_mix_normalized.json", "component_id": "tdl_A_100ns"},
+    {"id": "tdl_A_300ns", "profile": "configs/channel_profiles/tdl_mix_normalized.json", "component_id": "tdl_A_300ns"},
+    {"id": "tdl_B_10ns", "profile": "configs/channel_profiles/tdl_mix_normalized.json", "component_id": "tdl_B_10ns"},
+    {"id": "tdl_B_30ns", "profile": "configs/channel_profiles/tdl_mix_normalized.json", "component_id": "tdl_B_30ns"},
+    {"id": "tdl_B_100ns", "profile": "configs/channel_profiles/tdl_mix_normalized.json", "component_id": "tdl_B_100ns"},
+    {"id": "tdl_B_300ns", "profile": "configs/channel_profiles/tdl_mix_normalized.json", "component_id": "tdl_B_300ns"},
+    {"id": "tdl_C_10ns", "profile": "configs/channel_profiles/tdl_mix_normalized.json", "component_id": "tdl_C_10ns"},
+    {"id": "tdl_C_30ns", "profile": "configs/channel_profiles/tdl_mix_normalized.json", "component_id": "tdl_C_30ns"},
+    {"id": "tdl_C_100ns", "profile": "configs/channel_profiles/tdl_mix_normalized.json", "component_id": "tdl_C_100ns"},
+    {"id": "tdl_C_300ns", "profile": "configs/channel_profiles/tdl_mix_normalized.json", "component_id": "tdl_C_300ns"},
+    {"id": "tdl_D_10ns", "profile": "configs/channel_profiles/tdl_mix_normalized.json", "component_id": "tdl_D_10ns"},
+    {"id": "tdl_D_30ns", "profile": "configs/channel_profiles/tdl_mix_normalized.json", "component_id": "tdl_D_30ns"},
+    {"id": "tdl_D_100ns", "profile": "configs/channel_profiles/tdl_mix_normalized.json", "component_id": "tdl_D_100ns"},
+    {"id": "tdl_D_300ns", "profile": "configs/channel_profiles/tdl_mix_normalized.json", "component_id": "tdl_D_300ns"},
+    {"id": "tdl_E_10ns", "profile": "configs/channel_profiles/tdl_mix_normalized.json", "component_id": "tdl_E_10ns"},
+    {"id": "tdl_E_30ns", "profile": "configs/channel_profiles/tdl_mix_normalized.json", "component_id": "tdl_E_30ns"},
+    {"id": "tdl_E_100ns", "profile": "configs/channel_profiles/tdl_mix_normalized.json", "component_id": "tdl_E_100ns"},
+    {"id": "tdl_E_300ns", "profile": "configs/channel_profiles/tdl_mix_normalized.json", "component_id": "tdl_E_300ns"},
+    {"id": "umi_normalized", "profile": "configs/channel_profiles/umi_normalized.json", "component_id": "umi_normalized"},
+    {"id": "uma_normalized", "profile": "configs/channel_profiles/uma_normalized.json", "component_id": "uma_normalized"}
+  ]
+}
