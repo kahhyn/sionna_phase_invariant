@@ -37,7 +37,7 @@ evaluate_checkpoint() {
         echo "Skipping existing evaluation: $out_csv"
         return
     fi
-    python eval_bler_sionna.py \
+    python -m evaluation.eval_bler_sionna \
         --checkpoint "$checkpoint" \
         --ebno_list="$EBNO_LIST" \
         --coderate "$CODERATE" \
@@ -59,7 +59,7 @@ evaluate_baseline() {
         echo "Skipping existing evaluation: $out_csv"
         return
     fi
-    python eval_bler_sionna.py \
+    python -m evaluation.eval_bler_sionna \
         --receiver "$receiver" \
         --checkpoint "$CONFIG_CHECKPOINT" \
         --ebno_list="$EBNO_LIST" \
@@ -137,7 +137,7 @@ for eval_seed in "${EVAL_SEEDS_ARRAY[@]}"; do
     done
 done
 
-python aggregate_bler_seeds.py \
+python -m evaluation.aggregate_bler_seeds \
     --input_files "${CSV_FILES[@]}" \
     --out_csv "$RUN_ROOT/bler_multiseed_summary.csv"
 

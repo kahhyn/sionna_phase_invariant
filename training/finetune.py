@@ -6,7 +6,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from data import OFDMDataset
-from train import build_model, evaluate, move_batch, train_one_epoch
+from training.train import build_model, evaluate, move_batch, train_one_epoch
 
 
 def optional_float(text):

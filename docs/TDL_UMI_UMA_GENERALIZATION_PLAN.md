@@ -345,7 +345,7 @@ configs/channel_suites/generalization_normalized.json
 
 测试 suite 应展开为 20 个 TDL 固定 profile、UMi 和 UMa，而不是只输出一个混合平均值。
 
-## 6.4 修改 `train_sionna.py`
+## 6.4 修改 `training/train_sionna.py`
 
 新增计划接口：
 
@@ -371,7 +371,7 @@ channel_profile_hash
 
 - 控制台和训练历史中打印各 backend 的样本数与耗时。
 
-## 6.5 修改 `eval_ber_sionna.py`
+## 6.5 修改 `evaluation/eval_ber_sionna.py`
 
 新增计划接口：
 
@@ -389,7 +389,7 @@ channel_profile_hash
 - `--common_random_numbers` 对 UMi/UMa 也必须复现 topology；
 - A/C 在同一 test profile 下复用相同样本。
 
-## 6.6 修改 `eval_bler_sionna.py`
+## 6.6 修改 `evaluation/eval_bler_sionna.py`
 
 与 BER 评估使用相同 profile/suite 覆盖机制。
 
@@ -481,7 +481,7 @@ python -m unittest \
 ### 7.2 UMi/UMa 最小 smoke
 
 ```bash
-python train_sionna.py \
+python -m training.train_sionna \
   --model single_branch_n0_gate \
   --train_channel_profile configs/channel_profiles/umi_normalized.json \
   --val_channel_profile configs/channel_profiles/umi_normalized.json \
@@ -684,7 +684,7 @@ bash scripts/run_channel_generalization.sh \
 
 ### Milestone 2：训练与 BER
 
-1. 让 `train_sionna.py` 接受 train/val profile；
+1. 让 `training/train_sionna.py` 接受 train/val profile；
 2. checkpoint 保存 profile；
 3. BER 评估支持 profile/suite；
 4. 跑 seed-0 pilot；

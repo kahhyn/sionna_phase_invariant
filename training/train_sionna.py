@@ -8,12 +8,8 @@ import torch
 
 from data import SionnaOFDMBatchGenerator, SionnaOFDMConfig
 from models.factory import MODEL_CHOICES, build_model_from_args
+from utils.batching import batch_sizes
 from utils.metrics import masked_bce_with_logits, masked_error_count
-
-
-def batch_sizes(num_samples, batch_size):
-    for start in range(0, num_samples, batch_size):
-        yield min(batch_size, num_samples - start)
 
 
 def build_data_config(args):

@@ -36,25 +36,25 @@ after the input projection and after each residual block, so common-phase
 equivariance is preserved. The gate starts as the identity.
 
 ```bash
-python train_sionna.py --model single_branch_n0_gate --hidden 64 --hidden_complex 32 --zero_gate_hidden 16 --snr_db_min -10 --snr_db_max 20 --epochs 50 --batch_size 64 --num_train 10000 --num_val 2000 --train_phase_mode fixed --val_phase_mode uniform --save_dir runs/sionna_single_n0_gate
+python -m training.train_sionna --model single_branch_n0_gate --hidden 64 --hidden_complex 32 --zero_gate_hidden 16 --snr_db_min -10 --snr_db_max 20 --epochs 50 --batch_size 64 --num_train 10000 --num_val 2000 --train_phase_mode fixed --val_phase_mode uniform --save_dir runs/sionna_single_n0_gate
 ```
 
 Single-branch invariant receiver:
 
 ```bash
-python train_sionna.py --model single_branch --hidden 64 --hidden_complex 32 --epochs 50 --batch_size 64 --num_train 10000 --num_val 2000 --train_phase_mode fixed --val_phase_mode uniform --save_dir runs/sionna_single_h64_hc32
+python -m training.train_sionna --model single_branch --hidden 64 --hidden_complex 32 --epochs 50 --batch_size 64 --num_train 10000 --num_val 2000 --train_phase_mode fixed --val_phase_mode uniform --save_dir runs/sionna_single_h64_hc32
 ```
 
 Complex no-interaction receiver:
 
 ```bash
-python train_sionna.py --model complex_no_interaction --hidden 32 --hidden_complex 64 --branch_layers 3 --epochs 50 --batch_size 64 --num_train 10000 --num_val 2000 --train_phase_mode fixed --val_phase_mode uniform --save_dir runs/sionna_complex_h32_hc64_l3
+python -m training.train_sionna --model complex_no_interaction --hidden 32 --hidden_complex 64 --branch_layers 3 --epochs 50 --batch_size 64 --num_train 10000 --num_val 2000 --train_phase_mode fixed --val_phase_mode uniform --save_dir runs/sionna_complex_h32_hc64_l3
 ```
 
 ## BER evaluation
 
 ```bash
-python eval_ber_sionna.py --checkpoint runs/sionna_single_h64_hc32/best.pt --phase_mode uniform --num_samples 4096 --batch_size 128 --out_csv runs/sionna_single_h64_hc32/ber_uniform.csv
+python -m evaluation.eval_ber_sionna --checkpoint runs/sionna_single_h64_hc32/best.pt --phase_mode uniform --num_samples 4096 --batch_size 128 --out_csv runs/sionna_single_h64_hc32/ber_uniform.csv
 ```
 
 BER and BCE are aggregated by valid bit count. The last partial batch is not
@@ -134,7 +134,7 @@ logit convention used by this project.
 Single-checkpoint smoke evaluation:
 
 ```bash
-python eval_bler_sionna.py --checkpoint runs/sionna_multiseed_m10_p20/gated_seed0/best.pt --ebno_list=0,1,2,3,4,5,6,7,8 --coderate 0.5 --decoder_iterations 20 --batch_size 64 --target_block_errors 100 --max_blocks 20000 --seed 777000 --common_random_numbers --out_csv runs/sionna_ldpc_r050/gated_seed0.csv
+python -m evaluation.eval_bler_sionna --checkpoint runs/sionna_multiseed_m10_p20/gated_seed0/best.pt --ebno_list=0,1,2,3,4,5,6,7,8 --coderate 0.5 --decoder_iterations 20 --batch_size 64 --target_block_errors 100 --max_blocks 20000 --seed 777000 --common_random_numbers --out_csv runs/sionna_ldpc_r050/gated_seed0.csv
 ```
 
 Multi-seed comparison of No-interaction, ungated SingleBranch, and P+N0-gated

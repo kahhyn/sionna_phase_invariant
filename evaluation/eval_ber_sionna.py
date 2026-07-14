@@ -7,7 +7,7 @@ from pathlib import Path
 import torch
 
 from data import SionnaOFDMBatchGenerator, SionnaOFDMConfig
-from train_sionna import batch_sizes
+from utils.batching import batch_sizes
 from utils.checkpoints import load_receiver_checkpoint
 from utils.metrics import masked_bce_sum, masked_error_count
 
