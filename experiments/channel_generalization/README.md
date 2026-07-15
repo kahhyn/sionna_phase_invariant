@@ -1,5 +1,9 @@
 # TDL / UMi / UMa channel generalization
 
+For end-to-end commands, direct script usage, parameter descriptions, and the
+published checkpoint layout, see
+[`docs/TRAINING_EVALUATION_GUIDE.md`](../../docs/TRAINING_EVALUATION_GUIDE.md).
+
 This experiment is the normalized small-scale phase defined in
 `docs/TDL_UMI_UMA_GENERALIZATION_PLAN.md`. Pathloss and shadow fading are off,
 the channel is normalized, and N0 is derived from each sample's received

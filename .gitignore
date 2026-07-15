@@ -8,6 +8,9 @@ runs/
 !checkpoints/
 !checkpoints/continual_source/
 !checkpoints/continual_source/*.pt
+!checkpoints/generalization/
+!checkpoints/generalization/**/
+!checkpoints/generalization/**/*.pt
 *.csv
 SANITY_CHECK*.txt
 .DS_Store

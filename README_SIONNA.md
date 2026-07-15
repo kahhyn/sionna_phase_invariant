@@ -3,6 +3,10 @@
 This branch keeps the existing PyTorch receiver models and replaces the
 hand-written physical-layer data path with Sionna 2.x blocks.
 
+The complete commands and parameter reference for the current TDL/UMi/UMa
+experiments are in
+[`docs/TRAINING_EVALUATION_GUIDE.md`](docs/TRAINING_EVALUATION_GUIDE.md).
+
 ## Implemented chain
 
 ```text

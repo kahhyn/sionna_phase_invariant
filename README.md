@@ -2,6 +2,10 @@
 
 This is a minimal PyTorch project for testing a U(1)-invariant neural receiver idea.
 
+For the current Sionna 2.x TDL/UMi/UMa training, BER/BLER evaluation,
+QuaDRiGa evaluation, and published checkpoints, see
+[`docs/TRAINING_EVALUATION_GUIDE.md`](docs/TRAINING_EVALUATION_GUIDE.md).
+
 The first version uses a synthetic SISO-OFDM/QPSK dataset:
 
 ```text
