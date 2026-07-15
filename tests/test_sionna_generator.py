@@ -223,7 +223,9 @@ class SionnaGeneratorTest(unittest.TestCase):
                         f"configs/channel_profiles/{scenario}_normalized.json"
                     ),
                 )
+                full_batch = generator.generate_batch(4)
                 batch = generator.generate_batch(3, return_aux=True)
+                self.assertEqual(full_batch["Y"].shape, (4, 14, 72))
                 self.assertEqual(batch["Y"].shape, (3, 14, 72))
                 self.assertEqual(batch["H"].shape, (3, 14, 72))
                 self.assertEqual(batch["H_hat"].shape, (3, 14, 72))

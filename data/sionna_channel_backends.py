@@ -262,7 +262,11 @@ class SionnaChannelBackend:
             return_channel=True,
             device=str(self.device),
         )
-        return {"model": channel_model, "channel": ofdm_channel}
+        return {
+            "model": channel_model,
+            "channel": ofdm_channel,
+            "topology_batch_size": None,
+        }
 
     def reset(self, seed: int) -> None:
         self.sampler.reset(seed)
@@ -275,9 +279,13 @@ class SionnaChannelBackend:
         self.counts.clear()
 
     def _prepare_system_topology(
-        self, component: dict[str, Any], channel_model: Any, batch_size: int
+        self, component: dict[str, Any], runtime: dict[str, Any], batch_size: int
     ) -> dict[str, Any]:
         backend = component["backend"]
+        channel_model = runtime["model"]
+        previous_batch_size = runtime["topology_batch_size"]
+        if previous_batch_size is not None and previous_batch_size != batch_size:
+            channel_model.reset_topology()
         topology = gen_single_sector_topology(
             batch_size=batch_size,
             num_ut=1,
@@ -288,6 +296,7 @@ class SionnaChannelBackend:
             device=str(self.device),
         )
         channel_model.set_topology(*topology)
+        runtime["topology_batch_size"] = batch_size
         ut_loc, bs_loc, ut_orient, bs_orient, ut_velocity, in_state = topology
         del ut_orient, bs_orient
         distance = torch.linalg.vector_norm(ut_loc[:, 0] - bs_loc[:, 0], dim=-1)
@@ -324,7 +333,7 @@ class SionnaChannelBackend:
         else:
             metadata.update(
                 self._prepare_system_topology(
-                    component, runtime["model"], batch_size
+                    component, runtime, batch_size
                 )
             )
         y_clean_full, h_full = runtime["channel"](x_rg)
