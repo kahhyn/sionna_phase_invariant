@@ -508,6 +508,9 @@ E:\invariant_data\DICHASUS_data
 └── dichasus-0152_72sc_30khz.h5
 ```
 
+转换器同时在仓库的 `scripts/convert_dichasus_tfrecord.py` 中版本化；两份脚本保持一致。
+新环境可以先将仓库版本复制到上述 Windows 数据目录，再执行转换。
+
 在 Windows PowerShell 中执行完整转换：
 
 ```powershell
