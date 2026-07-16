@@ -3,6 +3,9 @@ __pycache__/
 */__pycache__/
 *.pyc
 runs/
+data/quadriga_umi_nlos_suite/
+data/quadriga_umi_nlos_interference_suite/
+data/dichasus/
 *.pt
 *.pth
 !checkpoints/

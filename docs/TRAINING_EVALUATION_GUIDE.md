@@ -374,7 +374,219 @@ MAT 文件至少需要：
 python eval_quadriga_trajectory.py --help
 ```
 
-## 9. 复现实验注意事项
+## 9. QuaDRiGa 双链路同频干扰
+
+干扰轨迹的 MATLAB 脚本和生成数据统一放在 Windows：
+
+```text
+E:\quadriga_data
+├── generate_quadriga_interference_trajectory.m
+├── generate_quadriga_interference_suite.m
+└── quadriga_umi_nlos_interference_suite\*.mat
+```
+
+在 MATLAB 中生成单条轨迹：
+
+```matlab
+addpath('E:\quadriga_data');
+generate_quadriga_interference_trajectory( ...
+    quadriga_path, ...
+    'E:\quadriga_data\quadriga_umi_nlos_interference_10m_seed0.mat', ...
+    0);
+```
+
+生成 seed 0 至 4 的五条轨迹：
+
+```matlab
+addpath('E:\quadriga_data');
+generate_quadriga_interference_suite( ...
+    quadriga_path, ...
+    'E:\quadriga_data\quadriga_umi_nlos_interference_suite');
+```
+
+每个 MAT 文件包含时间对齐的两个 reciprocal SISO 链路：
+
+```text
+H_desired_real / H_desired_imag       [frame, 14, 72]
+H_interferer_real / H_interferer_imag [frame, 14, 72]
+desired_positions_m                    [frame, 3]
+interferer_positions_m                 [frame, 3]
+timestamps_s / frame_index             [frame, 1]
+```
+
+手动复制到 WSL 后，建议目录为：
+
+```bash
+mkdir -p data/quadriga_umi_nlos_interference_suite
+# 将 Windows MAT 文件复制到上面的 WSL 目录。
+```
+
+单个组合的最小测试：
+
+```bash
+python -m evaluation.eval_quadriga_interference \
+  --channel_mat data/quadriga_umi_nlos_interference_suite/quadriga_umi_nlos_interference_10m_seed0.mat \
+  --invariant_checkpoint checkpoints/generalization/tdl_mix_normalized/single_branch_n0_gate_seed0.pt \
+  --strict_checkpoint checkpoints/generalization/tdl_mix_normalized/strict_matched_complex_p_n0_gate_seed0.pt \
+  --snr_list=10 \
+  --sir_list=inf,20,10,5,0 \
+  --interference_mode cochannel_full \
+  --sir_normalization per_frame \
+  --n0_mode thermal \
+  --normalization checkpoint \
+  --seed 777000 \
+  --device cuda \
+  --output_dir runs/quadriga_interference_smoke
+```
+
+干扰定义为：
+
+```text
+Y = H_desired X_desired
+  + alpha H_interferer X_interferer
+  + N
+```
+
+`SNR` 始终用期望信号功率与热噪声定义；`SIR` 用期望信号功率与缩放后的干扰功率定义。
+默认 `N0=thermal` 只向模型报告热噪声，不把未知干扰伪装成 AWGN。
+
+| 参数 | 说明 |
+|---|---|
+| `--sir_list` | `inf` 表示无干扰，其余为接收端目标 SIR |
+| `--interference_mode cochannel_full` | 干扰占用完整网格并污染目标 DMRS |
+| `--interference_mode data_only` | 干扰仅占目标数据 RE，DMRS 保持干净 |
+| `--interference_mode partial_band` | 干扰占中心连续部分子载波 |
+| `--partial_band_fraction` | partial-band 占总子载波的比例，默认 0.25 |
+| `--sir_normalization per_frame` | 每帧精确固定 SIR，隔离干扰结构效应 |
+| `--sir_normalization global` | 整条轨迹固定一次发射缩放，保留局部 SIR 变化 |
+| `--n0_mode thermal` | 模型只知道热噪声功率，推荐的零样本设置 |
+| `--n0_mode oracle_total` | 将干扰功率加进 N0，作为 oracle 消融 |
+| `--independent_condition_randomness` | 每个 SNR/SIR 使用不同随机量；默认复用基础随机量 |
+
+干扰符号使用独立随机流，因此 `SIR=inf` 不会额外消耗目标比特、热噪声或公共相位的
+随机序列，可作为无干扰基线；同一条件中的 A/C 始终共享完整接收样本。
+
+正式批量运行五条轨迹、两个训练分布、三个训练 seed：
+
+```bash
+CHANNEL_DIR=data/quadriga_umi_nlos_interference_suite \
+TRAIN_PROFILES="tdl_mix_normalized umi_uma_mix_normalized" \
+TRAIN_SEEDS="0 1 2" \
+INTERFERENCE_MODES="cochannel_full data_only" \
+SNR_LIST="10" \
+SIR_LIST="inf,20,10,5,0" \
+SIR_NORMALIZATION=per_frame \
+N0_MODE=thermal \
+RUN_ROOT=runs/quadriga_interference \
+DEVICE=cuda \
+bash scripts/run_quadriga_interference.sh \
+|& tee runs/quadriga_interference.log
+```
+
+批量脚本结束后自动生成：
+
+- `quadriga_interference_aggregate.csv`：每个 receiver 的 pooled/mean BER 和 BCE；
+- `quadriga_interference_paired_ac.csv`：相同轨迹、训练 seed 和随机量下的 A−C 配对差；
+- 每次运行的 summary、trajectory windows 和 `experiment_config.json`。
+
+第一轮推荐固定 `SNR=10 dB` 扫描 SIR。第二轮再固定 `SIR=10 dB` 扫描
+`SNR=0,5,10,15,20 dB`，避免一开始运行完整二维矩阵。
+
+## 10. DICHASUS-0152 真实测量信道评估
+
+DICHASUS-0152 是室内 LoS 测量数据，每条记录包含 32 根接收天线、1024 个子载波的
+复 CSI，以及位置、时间、每根天线的测量 SNR 和 CFO。原始数据并不包含发送比特和
+原始接收波形，因此本实验将测量 CSI 作为真实信道 `H`，再统一生成 QPSK、DMRS、AWGN
+和 `H_hat`。结果应表述为“真实测量信道上的半合成零样本 BER”，而不是完全 OTA BER。
+
+Windows 数据和转换脚本位于：
+
+```text
+E:\invariant_data\DICHASUS_data
+├── dichasus-0152.tfrecords
+├── convert_dichasus_tfrecord.py
+└── dichasus-0152_72sc_30khz.h5
+```
+
+在 Windows PowerShell 中执行完整转换：
+
+```powershell
+cd E:\invariant_data\DICHASUS_data
+C:\ProgramData\miniconda3\python.exe .\convert_dichasus_tfrecord.py
+```
+
+转换器按官方约定对 1024 子载波执行 `fftshift`，然后将中心频段复插值到当前模型的
+72×30 kHz 网格。输出保留所有 13,496 条记录和 32 根天线，但不预先展开 14 个 OFDM
+symbol。TFRecord 的物理记录顺序不是时间顺序，评估器会按 timestamp 稳定排序。
+
+将 HDF5 手动复制到 WSL：
+
+```bash
+mkdir -p data/dichasus
+# 目标文件：data/dichasus/dichasus-0152_72sc_30khz.h5
+```
+
+单天线最小评估：
+
+```bash
+python -m evaluation.eval_dichasus \
+  --channel_h5 data/dichasus/dichasus-0152_72sc_30khz.h5 \
+  --antenna_index 28 \
+  --invariant_checkpoint checkpoints/generalization/tdl_mix_normalized/single_branch_n0_gate_seed0.pt \
+  --strict_checkpoint checkpoints/generalization/tdl_mix_normalized/strict_matched_complex_p_n0_gate_seed0.pt \
+  --snr_list=0,5,10 \
+  --record_stride 16 \
+  --max_records 128 \
+  --phase_mode fixed \
+  --normalization checkpoint \
+  --device cuda \
+  --output_dir runs/dichasus_smoke_single
+```
+
+每条测量 CSI 在一个 frame 的 14 个 OFDM symbol 内保持不变。不能用连续 14 条
+DICHASUS 记录构造 14 个 symbol，因为测量记录间隔约 64 ms，而当前 OFDM frame 仅约
+0.467 ms。
+
+常用参数：
+
+| 参数 | 说明 |
+|---|---|
+| `--antenna_index` | DICHASUS 原始天线编号 0–31 |
+| `--record_stride` | 按时间排序后每隔多少条取一条 |
+| `--max_records` | stride/filter 后最多使用多少条；0 表示全部 |
+| `--min_measured_snr_db` | 按测量 CSI 的 SNR 过滤；不等于合成评估 SNR |
+| `--snr_list` | 后续合成 QPSK 链路的 SNR |
+| `--phase_mode` | `fixed` 隔离信道失配，`uniform` 测试相位失配叠加 |
+| `--normalization checkpoint` | 沿用训练时的逐 frame 信道功率归一化设置 |
+
+推荐的第一轮批量实验覆盖全部 32 根天线，但在时间轴上 stride 16，以控制运行量：
+
+```bash
+CHANNEL_H5=data/dichasus/dichasus-0152_72sc_30khz.h5 \
+TRAIN_PROFILES="tdl_mix_normalized umi_uma_mix_normalized" \
+TRAIN_SEEDS="0 1 2" \
+ANTENNA_INDICES=all \
+SNR_LIST="-10,-8,-6,-4,-2,0,2,4,6,8,10,12,14,16,18,20" \
+RECORD_STRIDE=16 \
+MAX_RECORDS=0 \
+MIN_MEASURED_SNR_DB=-inf \
+PHASE_MODE=fixed \
+RUN_ROOT=runs/dichasus_fixed \
+DEVICE=cuda \
+bash scripts/run_dichasus.sh \
+|& tee runs/dichasus_fixed.log
+```
+
+批量结束后生成：
+
+- `dichasus_aggregate.csv`：跨天线和训练 seed 的 pooled/mean BER、BCE；
+- `dichasus_paired_ac.csv`：相同天线、训练 seed 和随机样本下的 A−C 配对差；
+- 各天线的 summary、时间窗口结果和实验 manifest。
+
+固定相位结果完成后，换一个 `RUN_ROOT` 并设置 `PHASE_MODE=uniform`，测试真实信道失配
+与公共相位失配同时存在时的效果。
+
+## 11. 复现实验注意事项
 
 1. A/C 对比应使用相同评估 seed，并保持 profile、样本数和 SNR 完全相同。BER 脚本的
    `--common_random_numbers` 还会固定各 SNR 点的基础随机量；QuaDRiGa 评估器内部对
