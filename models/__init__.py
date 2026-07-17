@@ -1,5 +1,16 @@
 from .baseline_cnn import RealImagCNN, PhysicalFeatureCNN
 from .phase_invariant_net import PhaseInvariantReceiver
+from .deeprx import (
+    DeepRxInvariantReceiver,
+    DeepRxMatchedReceiver,
+    DeepRxReceiver,
+    LateInvariantDeepRx,
+    LateMatchedDeepRx,
+    PaperDeepRx11Receiver,
+    PaperInputInvariantA5,
+    PaperInputMatchedC5,
+    PaperInputCompactDeepRxReceiver,
+)
 from .complex_no_interaction_cnn import (
     ComplexCNNNoInteraction,
     ComplexCNNWithZeroConditioning,
@@ -18,6 +29,15 @@ __all__ = [
     "RealImagCNN",
     "PhysicalFeatureCNN",
     "PhaseInvariantReceiver",
+    "DeepRxReceiver",
+    "DeepRxInvariantReceiver",
+    "DeepRxMatchedReceiver",
+    "LateInvariantDeepRx",
+    "LateMatchedDeepRx",
+    "PaperDeepRx11Receiver",
+    "PaperInputInvariantA5",
+    "PaperInputMatchedC5",
+    "PaperInputCompactDeepRxReceiver",
     "ComplexCNNNoInteraction",
     "ComplexCNNWithZeroInput",
     "ComplexCNNWithZeroConditioning",

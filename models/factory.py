@@ -7,6 +7,17 @@ from .complex_no_interaction_cnn import (
     ComplexCNNWithZeroInput,
 )
 from .phase_invariant_net import PhaseInvariantReceiver
+from .deeprx import (
+    DeepRxInvariantReceiver,
+    DeepRxMatchedReceiver,
+    DeepRxReceiver,
+    LateInvariantDeepRx,
+    LateMatchedDeepRx,
+    PaperDeepRx11Receiver,
+    PaperInputInvariantA5,
+    PaperInputMatchedC5,
+    PaperInputCompactDeepRxReceiver,
+)
 from .single_invariant_net import (
     MatchedN0GatedComplexCNN,
     N0GatedSingleBranchPhaseInvariantReceiver,
@@ -33,6 +44,20 @@ MODEL_CHOICES = (
     "matched_complex_p_only_gate",
     "matched_complex_n0_only_gate",
     "strict_matched_complex_p_n0_gate",
+    "deeprx",
+    "deeprx_compact_paper_input",
+    "deeprx_paper11",
+    "deeprx_paper_input_a5",
+    "deeprx_paper_input_c5",
+    "deeprx_width_control_d110",
+    "deeprx_width_control_d64",
+    "deeprx_width_control_a32",
+    "deeprx_width_control_c32",
+    "deeprx_width_control_a55",
+    "deeprx_invariant_a",
+    "deeprx_matched_c",
+    "deeprx_late_invariant_a",
+    "deeprx_late_matched_c",
 )
 
 GATE_CONDITION_BY_MODEL = {
@@ -75,6 +100,107 @@ def build_model(
     """Build a receiver by its public experiment alias."""
     if name == "real_imag_cnn":
         return RealImagCNN(hidden=hidden, bits_per_symbol=bits_per_symbol)
+    if name == "deeprx":
+        return DeepRxReceiver(
+            hidden=hidden,
+            bits_per_symbol=bits_per_symbol,
+            num_blocks=branch_layers,
+        )
+    if name == "deeprx_compact_paper_input":
+        return PaperInputCompactDeepRxReceiver(
+            hidden=hidden,
+            bits_per_symbol=bits_per_symbol,
+            num_blocks=branch_layers,
+        )
+    if name == "deeprx_paper11":
+        return PaperDeepRx11Receiver(bits_per_symbol=bits_per_symbol)
+    if name == "deeprx_paper_input_a5":
+        return PaperInputInvariantA5(
+            hidden_complex=32,
+            readout_complex=32,
+            hidden_real=60,
+            condition_hidden=8,
+            bits_per_symbol=bits_per_symbol,
+            num_blocks=5,
+        )
+    if name == "deeprx_paper_input_c5":
+        return PaperInputMatchedC5(
+            hidden_complex=32,
+            readout_complex=32,
+            hidden_real=60,
+            condition_hidden=8,
+            bits_per_symbol=bits_per_symbol,
+            num_blocks=5,
+        )
+    if name == "deeprx_width_control_d110":
+        return PaperInputCompactDeepRxReceiver(
+            hidden=110,
+            bits_per_symbol=bits_per_symbol,
+            num_blocks=5,
+        )
+    if name == "deeprx_width_control_d64":
+        return PaperInputCompactDeepRxReceiver(
+            hidden=64,
+            bits_per_symbol=bits_per_symbol,
+            num_blocks=5,
+        )
+    if name == "deeprx_width_control_a32":
+        return PaperInputInvariantA5(
+            hidden_complex=32,
+            readout_complex=32,
+            hidden_real=60,
+            condition_hidden=8,
+            bits_per_symbol=bits_per_symbol,
+            num_blocks=5,
+        )
+    if name == "deeprx_width_control_c32":
+        return PaperInputMatchedC5(
+            hidden_complex=32,
+            readout_complex=32,
+            hidden_real=60,
+            condition_hidden=8,
+            bits_per_symbol=bits_per_symbol,
+            num_blocks=5,
+        )
+    if name == "deeprx_width_control_a55":
+        return PaperInputInvariantA5(
+            hidden_complex=55,
+            readout_complex=32,
+            hidden_real=60,
+            condition_hidden=8,
+            bits_per_symbol=bits_per_symbol,
+            num_blocks=5,
+        )
+    if name == "deeprx_invariant_a":
+        return DeepRxInvariantReceiver(
+            hidden=hidden,
+            adapter_complex=hidden_complex,
+            bits_per_symbol=bits_per_symbol,
+            num_blocks=branch_layers,
+        )
+    if name == "deeprx_matched_c":
+        return DeepRxMatchedReceiver(
+            hidden=hidden,
+            adapter_complex=hidden_complex,
+            bits_per_symbol=bits_per_symbol,
+            num_blocks=branch_layers,
+        )
+    if name == "deeprx_late_invariant_a":
+        return LateInvariantDeepRx(
+            hidden_real=hidden,
+            hidden_complex=hidden_complex,
+            zero_complex=zero_complex,
+            bits_per_symbol=bits_per_symbol,
+            num_blocks=branch_layers,
+        )
+    if name == "deeprx_late_matched_c":
+        return LateMatchedDeepRx(
+            hidden_real=hidden,
+            hidden_complex=hidden_complex,
+            zero_complex=zero_complex,
+            bits_per_symbol=bits_per_symbol,
+            num_blocks=branch_layers,
+        )
     if name == "physical_cnn":
         return PhysicalFeatureCNN(
             hidden=hidden,

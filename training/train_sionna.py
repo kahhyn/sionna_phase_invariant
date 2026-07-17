@@ -1,6 +1,7 @@
 """Train the existing receivers with a batched Sionna PHY backend."""
 
 import argparse
+import csv
 import math
 from pathlib import Path
 
@@ -166,6 +167,26 @@ def parse_args():
     parser.add_argument("--weight_decay", type=float, default=0.0)
     parser.add_argument("--log_interval", type=int, default=50)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--init_checkpoint",
+        help="Initialize model weights from a Sionna checkpoint; optimizer starts fresh.",
+    )
+    parser.add_argument(
+        "--epoch_offset",
+        type=int,
+        default=0,
+        help="Epoch number already completed before this training stage.",
+    )
+    parser.add_argument(
+        "--train_generator_seed",
+        type=int,
+        help="Override the training data RNG seed without changing model initialization.",
+    )
+    parser.add_argument(
+        "--val_generator_seed",
+        type=int,
+        help="Override the validation data RNG seed; fixed validation remains reproducible.",
+    )
     parser.add_argument("--save_dir", default="runs/sionna_debug")
     parser.add_argument("--device", default="cuda")
     return parser.parse_args()
@@ -177,6 +198,10 @@ def main():
         raise ValueError("num_train and num_val must be positive.")
     if args.batch_size <= 0:
         raise ValueError("batch_size must be positive.")
+    if args.epochs <= 0:
+        raise ValueError("epochs must be positive.")
+    if args.epoch_offset < 0:
+        raise ValueError("epoch_offset must be non-negative.")
 
     requested_device = torch.device(args.device)
     if requested_device.type == "cuda" and not torch.cuda.is_available():
@@ -199,11 +224,19 @@ def main():
         if args.val_channel_profile
         else train_profile
     )
+    train_generator_seed = (
+        args.seed if args.train_generator_seed is None else args.train_generator_seed
+    )
+    val_generator_seed = (
+        args.seed + 100000
+        if args.val_generator_seed is None
+        else args.val_generator_seed
+    )
     train_generator = build_generator(
         args,
         data_config,
         args.train_phase_mode,
-        args.seed,
+        train_generator_seed,
         device,
         train_profile,
     )
@@ -211,15 +244,66 @@ def main():
         args,
         data_config,
         args.val_phase_mode,
-        args.seed + 100000,
+        val_generator_seed,
         device,
         val_profile,
     )
 
     model = build_model_from_args(args, bits_per_symbol=2).to(device)
+    init_checkpoint = None
+    if args.init_checkpoint:
+        init_checkpoint = torch.load(
+            args.init_checkpoint, map_location=device, weights_only=False
+        )
+        if init_checkpoint.get("data_backend") != "sionna":
+            raise ValueError("init_checkpoint is not a Sionna checkpoint.")
+        if init_checkpoint.get("model_name") != args.model:
+            raise ValueError(
+                "init_checkpoint model mismatch: "
+                f"{init_checkpoint.get('model_name')!r} != {args.model!r}."
+            )
+        source_config = init_checkpoint.get("sionna_config")
+        if source_config is not None and source_config != data_config.to_dict():
+            raise ValueError("init_checkpoint Sionna configuration does not match.")
+        model.load_state_dict(init_checkpoint["model_state"], strict=True)
+
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=args.lr, weight_decay=args.weight_decay
     )
+
+    history_path = save_dir / "history.csv"
+    history_fields = [
+        "epoch",
+        "lr",
+        "train_loss",
+        "train_ber",
+        "val_loss",
+        "val_ber",
+    ]
+
+    def make_checkpoint(epoch, train_loss, train_ber, val_loss, val_ber):
+        return {
+            "model_name": args.model,
+            "model_state": model.state_dict(),
+            "optimizer_state": optimizer.state_dict(),
+            "epoch": epoch,
+            "train_loss": train_loss,
+            "train_ber": train_ber,
+            "val_loss": val_loss,
+            "val_ber": val_ber,
+            "args": vars(args),
+            "sionna_config": data_config.to_dict(),
+            "data_backend": "sionna",
+            "channel_profile_schema_version": PROFILE_SCHEMA_VERSION,
+            "train_channel_profile": train_profile,
+            "val_channel_profile": val_profile,
+            "channel_profile_hash": channel_profile_hash(train_profile),
+            "train_profile_counts": train_generator.channel_profile_counts,
+            "val_profile_counts": val_generator.channel_profile_counts,
+            "init_checkpoint": args.init_checkpoint,
+            "train_generator_seed": train_generator_seed,
+            "val_generator_seed": val_generator_seed,
+        }
 
     best_val_loss = math.inf
     print(f"Device: {device}")
@@ -232,10 +316,52 @@ def main():
         f"Train phase: {args.train_phase_mode} | "
         f"Validation phase: {args.val_phase_mode}"
     )
+    print(
+        f"Training data seed: {train_generator_seed} | "
+        f"Validation data seed: {val_generator_seed}"
+    )
+    if init_checkpoint is not None:
+        print(
+            f"Initialized from: {args.init_checkpoint} | "
+            f"fresh AdamW at lr={args.lr:g}"
+        )
+        initial_val_loss, initial_val_ber = evaluate_sionna(
+            model, val_generator, args.num_val, args.batch_size
+        )
+        best_val_loss = initial_val_loss
+        initial_checkpoint = make_checkpoint(
+            args.epoch_offset, None, None, initial_val_loss, initial_val_ber
+        )
+        torch.save(initial_checkpoint, save_dir / "best.pt")
+        with history_path.open("w", newline="") as stream:
+            writer = csv.DictWriter(stream, fieldnames=history_fields)
+            writer.writeheader()
+            writer.writerow(
+                {
+                    "epoch": args.epoch_offset,
+                    "lr": args.lr,
+                    "train_loss": "",
+                    "train_ber": "",
+                    "val_loss": initial_val_loss,
+                    "val_ber": initial_val_ber,
+                }
+            )
+        print(
+            f"Initial validation | loss {initial_val_loss:.5f} | "
+            f"BER {initial_val_ber:.5f}"
+        )
+    else:
+        with history_path.open("w", newline="") as stream:
+            writer = csv.DictWriter(stream, fieldnames=history_fields)
+            writer.writeheader()
 
     for epoch in range(1, args.epochs + 1):
-        print(f"\nEpoch {epoch}/{args.epochs}")
-        train_generator.reset_profile_sampler(args.seed + epoch * 1009)
+        absolute_epoch = args.epoch_offset + epoch
+        final_epoch = args.epoch_offset + args.epochs
+        print(f"\nEpoch {absolute_epoch}/{final_epoch}")
+        train_generator.reset_profile_sampler(
+            train_generator_seed + absolute_epoch * 1009
+        )
         train_loss, train_ber = train_one_epoch_sionna(
             model,
             train_generator,
@@ -248,7 +374,7 @@ def main():
             model, val_generator, args.num_val, args.batch_size
         )
         print(
-            f"Epoch {epoch:03d} | train loss {train_loss:.5f} | "
+            f"Epoch {absolute_epoch:03d} | train loss {train_loss:.5f} | "
             f"train BER {train_ber:.5f} | val loss {val_loss:.5f} | "
             f"val BER {val_ber:.5f}"
         )
@@ -257,20 +383,21 @@ def main():
             f"validation profile batches: {val_generator.channel_profile_counts}"
         )
 
-        checkpoint = {
-            "model_name": args.model,
-            "model_state": model.state_dict(),
-            "args": vars(args),
-            "sionna_config": data_config.to_dict(),
-            "data_backend": "sionna",
-            "channel_profile_schema_version": PROFILE_SCHEMA_VERSION,
-            "train_channel_profile": train_profile,
-            "val_channel_profile": val_profile,
-            "channel_profile_hash": channel_profile_hash(train_profile),
-            "train_profile_counts": train_generator.channel_profile_counts,
-            "val_profile_counts": val_generator.channel_profile_counts,
-        }
+        checkpoint = make_checkpoint(
+            absolute_epoch, train_loss, train_ber, val_loss, val_ber
+        )
         torch.save(checkpoint, save_dir / "last.pt")
+        with history_path.open("a", newline="") as stream:
+            csv.DictWriter(stream, fieldnames=history_fields).writerow(
+                {
+                    "epoch": absolute_epoch,
+                    "lr": args.lr,
+                    "train_loss": train_loss,
+                    "train_ber": train_ber,
+                    "val_loss": val_loss,
+                    "val_ber": val_ber,
+                }
+            )
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save(checkpoint, save_dir / "best.pt")

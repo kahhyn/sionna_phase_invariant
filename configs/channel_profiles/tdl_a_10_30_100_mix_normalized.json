@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "name": "tdl_A_10_30_100_mix_normalized",
+  "sampling": "balanced_batch",
+  "components": [
+    {
+      "id": "tdl_A_10ns",
+      "backend": "tdl",
+      "weight": 1.0,
+      "tdl_model": "A",
+      "delay_spread_ns": 10,
+      "max_doppler_hz": 200,
+      "normalize_channel": true
+    },
+    {
+      "id": "tdl_A_30ns",
+      "backend": "tdl",
+      "weight": 1.0,
+      "tdl_model": "A",
+      "delay_spread_ns": 30,
+      "max_doppler_hz": 200,
+      "normalize_channel": true
+    },
+    {
+      "id": "tdl_A_100ns",
+      "backend": "tdl",
+      "weight": 1.0,
+      "tdl_model": "A",
+      "delay_spread_ns": 100,
+      "max_doppler_hz": 200,
+      "normalize_channel": true
+    }
+  ]
+}

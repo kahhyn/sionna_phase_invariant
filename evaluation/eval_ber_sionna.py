@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+from dataclasses import replace
 from pathlib import Path
 
 import torch
@@ -91,6 +92,11 @@ def main():
         "--eval_component_id",
         help="Evaluate one fixed component from --eval_channel_profile.",
     )
+    parser.add_argument(
+        "--eval_dmrs_freq_spacing",
+        type=int,
+        help="Override the checkpoint DMRS frequency spacing at evaluation.",
+    )
     args = parser.parse_args()
 
     device = torch.device(args.device)
@@ -102,6 +108,12 @@ def main():
     )
     train_args = checkpoint["args"]
     config = SionnaOFDMConfig(**checkpoint["sionna_config"])
+    if args.eval_dmrs_freq_spacing is not None:
+        if args.eval_dmrs_freq_spacing <= 0:
+            raise ValueError("--eval_dmrs_freq_spacing must be positive.")
+        config = replace(
+            config, dmrs_freq_spacing=args.eval_dmrs_freq_spacing
+        )
     model_name = checkpoint["model_name"]
     train_seed = int(train_args.get("seed", -1))
     train_profile = checkpoint.get("train_channel_profile")
@@ -165,6 +177,7 @@ def main():
                 "scenario": scenario,
                 "tdl_model": tdl_model,
                 "delay_ns": delay_ns,
+                "dmrs_freq_spacing": config.dmrs_freq_spacing,
             }
         )
 
@@ -189,6 +202,7 @@ def main():
                 "scenario",
                 "tdl_model",
                 "delay_ns",
+                "dmrs_freq_spacing",
             ],
         )
         writer.writeheader()
