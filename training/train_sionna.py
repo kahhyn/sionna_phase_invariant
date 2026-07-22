@@ -154,6 +154,14 @@ def parse_args():
     )
 
     parser.add_argument("--hidden", type=int, default=32)
+    parser.add_argument(
+        "--trunk_hidden",
+        type=int,
+        help=(
+            "RealImagCNN trunk width. Defaults to the matched 200k setting "
+            "when omitted."
+        ),
+    )
     parser.add_argument("--hidden_complex", type=int, default=16)
     parser.add_argument("--zero_complex", type=int, default=16)
     parser.add_argument("--branch_layers", type=int, default=2)

@@ -15,6 +15,7 @@ data/dichasus/
 !checkpoints/generalization/**/
 !checkpoints/generalization/**/*.pt
 *.csv
+!checkpoints/generalization/**/*.csv
 SANITY_CHECK*.txt
 .DS_Store
 Thumbs.db

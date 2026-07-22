@@ -88,6 +88,7 @@ def build_model(
     name,
     bits_per_symbol,
     hidden=32,
+    trunk_hidden=None,
     hidden_complex=16,
     zero_complex=16,
     branch_layers=2,
@@ -99,7 +100,15 @@ def build_model(
 ):
     """Build a receiver by its public experiment alias."""
     if name == "real_imag_cnn":
-        return RealImagCNN(hidden=hidden, bits_per_symbol=bits_per_symbol)
+        return RealImagCNN(
+            hidden=hidden,
+            trunk_hidden=50 if trunk_hidden is None else trunk_hidden,
+            bits_per_symbol=bits_per_symbol,
+            num_blocks=branch_layers,
+            kernel_size=kernel_size,
+            use_norm=use_norm,
+            condition_hidden=zero_gate_hidden,
+        )
     if name == "deeprx":
         return DeepRxReceiver(
             hidden=hidden,
@@ -319,6 +328,7 @@ def build_model_from_args(args, bits_per_symbol=2):
         args["model"],
         bits_per_symbol=bits_per_symbol,
         hidden=args["hidden"],
+        trunk_hidden=args.get("trunk_hidden"),
         hidden_complex=args["hidden_complex"],
         zero_complex=args["zero_complex"],
         branch_layers=args["branch_layers"],

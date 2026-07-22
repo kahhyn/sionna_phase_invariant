@@ -1,0 +1,18 @@
+git_commit=fb4dde42e8e834f9184be69dc3465da34de265fe
+created_utc=2026-07-21T14:06:30Z
+capacity=50k
+epochs=30
+num_train=5000
+num_val=1000
+num_eval=1024
+train_seed=0
+eval_seed=777000
+snr_list=-10,0,10,16,20
+ M .vscode/settings.json
+ M models/baseline_cnn.py
+ M models/factory.py
+ M tests/test_model_factory.py
+ M training/train_sionna.py
+?? experiments/channel_generalization/analyze_realimag_matched.py
+?? scripts/run_capacity_screen_umi.sh
+?? scripts/run_realimag_matched_four_domains.sh

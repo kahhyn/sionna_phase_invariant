@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from models.factory import build_model
+from models.factory import build_model, build_model_from_args
 
 
 class ModelFactoryTest(unittest.TestCase):
@@ -89,6 +89,73 @@ class ModelFactoryTest(unittest.TestCase):
         reference = invariant(y, h_hat, p, n0)
         rotated = invariant(phase * y, phase * h_hat, p, n0)
         torch.testing.assert_close(rotated, reference, atol=1e-5, rtol=1e-5)
+
+    def test_real_imag_cnn_matches_single_branch_depth_and_parameters(self):
+        y, h_hat, p, n0 = self._inputs()
+        kwargs = {
+            "bits_per_symbol": 2,
+            "hidden": 64,
+            "hidden_complex": 32,
+            "zero_complex": 32,
+            "branch_layers": 2,
+            "zero_gate_hidden": 16,
+        }
+        real_imag = build_model("real_imag_cnn", **kwargs)
+        invariant = build_model("single_branch_n0_gate", **kwargs)
+
+        real_count = sum(parameter.numel() for parameter in real_imag.parameters())
+        invariant_count = sum(
+            parameter.numel() for parameter in invariant.parameters()
+        )
+        self.assertEqual(real_count, 204558)
+        self.assertEqual(invariant_count, 204599)
+        self.assertLess(abs(real_count - invariant_count) / invariant_count, 0.001)
+        self.assertEqual(len(real_imag.blocks), len(invariant.blocks))
+        self.assertEqual(len(real_imag.blocks), 2)
+        self.assertEqual(
+            len(real_imag.block_zero_gates), len(invariant.block_zero_gates)
+        )
+
+        logits = real_imag(y, h_hat, p, n0)
+        self.assertEqual(logits.shape, (2, 2, 4, 5))
+        self.assertTrue(torch.isfinite(logits).all())
+
+        loss = logits.square().mean()
+        loss.backward()
+        self.assertTrue(
+            all(
+                parameter.grad is not None
+                and torch.isfinite(parameter.grad).all()
+                for parameter in real_imag.parameters()
+            )
+        )
+
+    def test_small_real_imag_capacity_width_is_checkpoint_reconstructable(self):
+        common = {
+            "model": "real_imag_cnn",
+            "bits_per_symbol": 2,
+            "hidden_complex": 16,
+            "zero_complex": 16,
+            "branch_layers": 2,
+            "kernel_size": 3,
+            "no_norm": False,
+            "gate_type": "swiglu",
+            "single_readout_mode": "low_rank",
+        }
+        for hidden, trunk_hidden, zero_gate_hidden, expected in [
+            (32, 25, 8, 52524),
+            (20, 15, 5, 20322),
+        ]:
+            with self.subTest(hidden=hidden, trunk_hidden=trunk_hidden):
+                args = {
+                    **common,
+                    "hidden": hidden,
+                    "trunk_hidden": trunk_hidden,
+                    "zero_gate_hidden": zero_gate_hidden,
+                }
+                model = build_model_from_args(args)
+                count = sum(parameter.numel() for parameter in model.parameters())
+                self.assertEqual(count, expected)
 
     def test_deeprx_a_c_models_are_parameter_matched_and_a_is_invariant(self):
         y, h_hat, p, n0 = self._inputs()
