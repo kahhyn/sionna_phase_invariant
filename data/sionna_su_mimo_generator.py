@@ -20,8 +20,8 @@ from typing import Any, Dict
 
 import torch
 from sionna.phy import config as sionna_config
-from sionna.phy.channel import AWGN, OFDMChannel
-from sionna.phy.channel.tr38901 import TDL
+from sionna.phy.channel import AWGN
+from sionna.phy.fec.ldpc import LDPC5GDecoder, LDPC5GEncoder
 from sionna.phy.mapping import Constellation, Mapper
 from sionna.phy.ofdm import (
     LSChannelEstimator,
@@ -29,8 +29,14 @@ from sionna.phy.ofdm import (
     ResourceGrid,
     ResourceGridMapper,
 )
+from sionna.phy.utils import ebnodb2no
 
-from .sionna_ofdm_generator import legacy_qpsk_points
+from .sionna_channel_backends import (
+    SionnaChannelBackend,
+    legacy_channel_profile,
+    load_channel_profile,
+)
+from .sionna_ofdm_generator import SionnaLDPC5GConfig, legacy_qpsk_points
 
 
 @dataclass(frozen=True)
@@ -92,6 +98,7 @@ class SionnaSUMIMOBatchGenerator:
         narrow_phase_range: float = math.pi / 8,
         seed: int = 0,
         device: torch.device | str = "cuda",
+        channel_profile: str | dict[str, Any] | None = None,
     ) -> None:
         self.config = config or SionnaSUMIMOConfig()
         self.device = torch.device(device)
@@ -102,6 +109,11 @@ class SionnaSUMIMOBatchGenerator:
         self.phase_mode = phase_mode
         self.narrow_phase_range = float(narrow_phase_range)
         self.seed = int(seed)
+        self.channel_profile = (
+            legacy_channel_profile(self.config)
+            if channel_profile is None
+            else load_channel_profile(channel_profile)
+        )
 
         self._validate_config()
         self._torch_generator = torch.Generator(device=self.device)
@@ -191,27 +203,11 @@ class SionnaSUMIMOBatchGenerator:
             self.resource_grid, device=str(self.device)
         )
 
-        max_speed_mps = (
-            cfg.max_doppler_hz
-            * 299_792_458.0
-            / cfg.carrier_frequency_hz
-        )
-        channel_model = TDL(
-            model=cfg.tdl_model,
-            delay_spread=cfg.delay_spread_s,
-            carrier_frequency=cfg.carrier_frequency_hz,
-            min_speed=0.0,
-            max_speed=max_speed_mps,
-            num_rx_ant=cfg.num_rx_ant,
-            num_tx_ant=cfg.num_layers,
-            device=str(self.device),
-        )
-        self.channel = OFDMChannel(
-            channel_model=channel_model,
-            resource_grid=self.resource_grid,
-            normalize_channel=cfg.normalize_channel,
-            return_channel=True,
-            device=str(self.device),
+        self.channel_backend = SionnaChannelBackend(
+            self.channel_profile,
+            cfg,
+            self.resource_grid,
+            self.device,
         )
         self.awgn = AWGN(device=str(self.device))
         self.ls_estimator = LSChannelEstimator(
@@ -243,6 +239,24 @@ class SionnaSUMIMOBatchGenerator:
             self.seed = int(seed)
         self._torch_generator.manual_seed(self.seed)
         sionna_config.seed = self.seed
+        self._sionna_rng_state = sionna_config.torch_rng(
+            str(self.device)
+        ).get_state()
+        self.channel_backend.reset(self.seed + 31_337)
+
+    def reset_profile_sampler(self, seed: int | None = None) -> None:
+        """Start a deterministic profile-component order and clear counts."""
+        sampler_seed = self.seed + 31_337 if seed is None else int(seed)
+        self.channel_backend.reset_sampler(sampler_seed)
+
+    @property
+    def channel_profile_counts(self) -> dict[str, int]:
+        return dict(self.channel_backend.counts)
+
+    def _activate_sionna_rng(self) -> torch.Generator:
+        rng = sionna_config.torch_rng(str(self.device))
+        rng.set_state(self._sionna_rng_state)
+        return rng
 
     def _sample_snr_db(self, batch_size: int) -> torch.Tensor:
         unit = torch.rand(
@@ -260,6 +274,26 @@ class SionnaSUMIMOBatchGenerator:
             return (2.0 * unit - 1.0) * self.narrow_phase_range
         return 2.0 * math.pi * unit
 
+    def _make_data_bits(self, batch_size: int):
+        cfg = self.config
+        bits_data = torch.randint(
+            0,
+            2,
+            (
+                batch_size,
+                cfg.num_layers,
+                self.resource_grid.num_data_symbols,
+                cfg.bits_per_symbol,
+            ),
+            dtype=torch.int32,
+            device=self.device,
+            generator=self._torch_generator,
+        )
+        return bits_data, {}
+
+    def _compute_noise_power(self, snr_db: torch.Tensor) -> torch.Tensor:
+        return self.config.total_tx_power / torch.pow(10.0, snr_db / 10.0)
+
     @torch.no_grad()
     def generate_batch(
         self, batch_size: int, *, return_aux: bool = False
@@ -268,20 +302,7 @@ class SionnaSUMIMOBatchGenerator:
             raise ValueError("batch_size must be positive.")
 
         cfg = self.config
-        num_data_symbols = self.resource_grid.num_data_symbols
-        bits_data = torch.randint(
-            0,
-            2,
-            (
-                batch_size,
-                cfg.num_layers,
-                num_data_symbols,
-                cfg.bits_per_symbol,
-            ),
-            dtype=torch.int32,
-            device=self.device,
-            generator=self._torch_generator,
-        )
+        bits_data, bit_metadata = self._make_data_bits(batch_size)
         mapped = self.mapper(
             bits_data.reshape(batch_size, 1, cfg.num_layers, -1)
         )
@@ -303,11 +324,15 @@ class SionnaSUMIMOBatchGenerator:
                     :, layer_index, bit_index, self._data_mask[layer_index]
                 ] = bits_data[:, layer_index, :, bit_index].to(torch.float32)
 
-        y_clean_full, h_full = self.channel(x_rg)
+        sionna_rng = self._activate_sionna_rng()
+        y_clean_full, h_full, channel_metadata = self.channel_backend.apply(
+            x_rg, batch_size
+        )
         snr_db = self._sample_snr_db(batch_size)
-        n0 = cfg.total_tx_power / torch.pow(10.0, snr_db / 10.0)
+        n0 = self._compute_noise_power(snr_db)
         y_full = self.awgn(y_clean_full, n0)
         h_hat_full, err_var_full = self.ls_estimator(y_full, n0)
+        self._sionna_rng_state = sionna_rng.get_state()
 
         y_unrotated = y_full[:, 0]
         y_clean_unrotated = y_clean_full[:, 0]
@@ -360,6 +385,8 @@ class SionnaSUMIMOBatchGenerator:
                 device=self.device,
             ),
         }
+        batch.update(bit_metadata)
+        batch.update(channel_metadata)
         if return_aux:
             batch.update(
                 {
@@ -370,3 +397,132 @@ class SionnaSUMIMOBatchGenerator:
                 }
             )
         return batch
+
+
+class Sionna5GLDPCSUMIMOBatchGenerator(SionnaSUMIMOBatchGenerator):
+    """One independent rate-matched 5G NR LDPC codeword per MIMO layer."""
+
+    def __init__(
+        self,
+        config: SionnaSUMIMOConfig | None = None,
+        *,
+        ldpc_config: SionnaLDPC5GConfig | None = None,
+        ebno_db_min: float = -3.0,
+        ebno_db_max: float = 5.0,
+        phase_mode: str = "fixed",
+        narrow_phase_range: float = math.pi / 8,
+        seed: int = 0,
+        device: torch.device | str = "cuda",
+        channel_profile: str | dict[str, Any] | None = None,
+    ) -> None:
+        self.ldpc_config = ldpc_config or SionnaLDPC5GConfig()
+        super().__init__(
+            config,
+            snr_db_min=ebno_db_min,
+            snr_db_max=ebno_db_max,
+            phase_mode=phase_mode,
+            narrow_phase_range=narrow_phase_range,
+            seed=seed,
+            device=device,
+            channel_profile=channel_profile,
+        )
+        self.n = int(
+            self.resource_grid.num_data_symbols * self.config.bits_per_symbol
+        )
+        self.k = int(round(self.n * self.ldpc_config.coderate))
+        if not 0.0 < self.ldpc_config.coderate < 1.0:
+            raise ValueError("LDPC coderate must be in (0, 1).")
+        self.encoder = LDPC5GEncoder(
+            k=self.k,
+            n=self.n,
+            num_bits_per_symbol=self.config.bits_per_symbol,
+            device=str(self.device),
+        )
+        self.decoder = LDPC5GDecoder(
+            self.encoder,
+            hard_out=True,
+            return_infobits=True,
+            num_iter=self.ldpc_config.num_iter,
+            cn_update=self.ldpc_config.cn_update,
+            prune_pcm=self.ldpc_config.prune_pcm,
+            device=str(self.device),
+        )
+
+    @property
+    def coderate(self) -> float:
+        return self.k / self.n
+
+    def _make_data_bits(self, batch_size: int):
+        num_layers = self.config.num_layers
+        info_bits = torch.randint(
+            0,
+            2,
+            (batch_size, num_layers, self.k),
+            dtype=torch.int32,
+            device=self.device,
+            generator=self._torch_generator,
+        ).to(torch.float32)
+        codeword_bits = self.encoder(
+            info_bits.reshape(batch_size * num_layers, self.k)
+        ).reshape(batch_size, num_layers, self.n)
+        bits_data = codeword_bits.reshape(
+            batch_size,
+            num_layers,
+            self.resource_grid.num_data_symbols,
+            self.config.bits_per_symbol,
+        ).to(torch.int32)
+        return bits_data, {
+            "info_bits": info_bits,
+            "codeword_bits": codeword_bits.to(torch.float32),
+        }
+
+    def _compute_noise_power(self, ebno_db: torch.Tensor) -> torch.Tensor:
+        nominal_n0 = ebnodb2no(
+            ebno_db,
+            num_bits_per_symbol=self.config.bits_per_symbol,
+            coderate=self.coderate,
+            resource_grid=self.resource_grid,
+        ).to(device=self.device, dtype=torch.float32)
+        return self.config.total_tx_power * nominal_n0
+
+    @torch.no_grad()
+    def generate_batch(
+        self, batch_size: int, *, return_aux: bool = False
+    ) -> Dict[str, Any]:
+        batch = super().generate_batch(batch_size, return_aux=return_aux)
+        batch["ebno_db"] = batch["snr_db"].clone()
+        return batch
+
+    def extract_codeword_logits(self, logits: torch.Tensor) -> torch.Tensor:
+        expected_shape = (
+            self.config.num_layers,
+            self.config.bits_per_symbol,
+            self.config.num_ofdm_symbols,
+            self.config.fft_size,
+        )
+        if logits.dim() != 5 or tuple(logits.shape[1:]) != expected_shape:
+            raise ValueError("logits must have shape [B, L, bits, T, F].")
+        layer_logits = []
+        for layer_index in range(self.config.num_layers):
+            bit_planes = [
+                logits[
+                    :, layer_index, bit_index, self._data_mask[layer_index]
+                ]
+                for bit_index in range(self.config.bits_per_symbol)
+            ]
+            layer_logits.append(
+                torch.stack(bit_planes, dim=-1).reshape(logits.shape[0], self.n)
+            )
+        return torch.stack(layer_logits, dim=1)
+
+    @torch.no_grad()
+    def decode_logits(
+        self, logits: torch.Tensor, *, num_iter: int | None = None
+    ) -> torch.Tensor:
+        codeword_logits = self.extract_codeword_logits(logits)
+        flat_logits = codeword_logits.reshape(-1, self.n)
+        if num_iter is None:
+            decoded = self.decoder(flat_logits)
+        else:
+            decoded = self.decoder(flat_logits, num_iter=num_iter)
+        return decoded.reshape(logits.shape[0], self.config.num_layers, self.k)

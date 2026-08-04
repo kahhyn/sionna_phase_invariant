@@ -5,7 +5,11 @@ from pathlib import Path
 import torch
 
 from data import SionnaSUMIMOBatchGenerator, SionnaSUMIMOConfig
-from models import SUMIMOPhaseInvariantReceiver
+from models import (
+    SUMIMOPhaseInvariantReceiver,
+    SUMIMOPhaseSensitiveReceiver,
+    build_su_mimo_model,
+)
 from utils.metrics import masked_bce_with_logits
 
 
@@ -138,6 +142,55 @@ class SUMIMOSmokeTest(unittest.TestCase):
             )
         torch.testing.assert_close(reference, rotated, atol=3e-5, rtol=3e-5)
 
+    def test_model_choices_share_exact_tdl_mix_parameter_budget(self):
+        model_config = {
+            "num_rx_ant": 2,
+            "hidden_complex": 32,
+            "zero_real": 22,
+            "hidden_real": 66,
+            "bits_per_symbol": 2,
+            "num_iterations": 2,
+            "kernel_size": 3,
+            "zero_gate_hidden": 16,
+        }
+        invariant = build_su_mimo_model(
+            "su_mimo_phase_invariant", model_config
+        )
+        sensitive = build_su_mimo_model(
+            "su_mimo_phase_sensitive", model_config
+        )
+        self.assertIsInstance(invariant, SUMIMOPhaseInvariantReceiver)
+        self.assertIsInstance(sensitive, SUMIMOPhaseSensitiveReceiver)
+        self.assertEqual(sum(p.numel() for p in invariant.parameters()), 204599)
+        self.assertEqual(sum(p.numel() for p in sensitive.parameters()), 204599)
+
+    def test_phase_sensitive_control_is_not_invariant(self):
+        batch = self.batch
+        model = SUMIMOPhaseSensitiveReceiver(
+            num_rx_ant=2,
+            hidden_complex=4,
+            zero_real=4,
+            hidden_real=8,
+            bits_per_symbol=2,
+            num_iterations=1,
+            zero_gate_hidden=4,
+        ).to(self.device).eval()
+        rotation = torch.polar(
+            torch.ones(2, device=self.device),
+            torch.tensor([0.71, 1.37], device=self.device),
+        ).view(2, 1, 1, 1)
+        with torch.no_grad():
+            reference = model(
+                batch["Y"], batch["H_hat"], batch["P"], batch["N0"]
+            )
+            rotated = model(
+                rotation * batch["Y"],
+                rotation.unsqueeze(1) * batch["H_hat"],
+                batch["P"],
+                batch["N0"],
+            )
+        self.assertGreater(float((reference - rotated).abs().max()), 1e-4)
+
     def test_layer_permutation_equivariance(self):
         batch = self.batch
         model = self._build_model().eval()
@@ -178,6 +231,33 @@ class SUMIMOSmokeTest(unittest.TestCase):
         second = generator.generate_batch(1, return_aux=True)
         for key in ("X", "H_unrotated", "Y_unrotated", "phi", "N0", "bits"):
             torch.testing.assert_close(first[key], second[key])
+
+    def test_existing_umi_profile_runs_without_reconfiguration(self):
+        profile_path = (
+            Path(__file__).resolve().parents[1]
+            / "configs/channel_profiles/umi_normalized.json"
+        )
+        config = SionnaSUMIMOConfig(
+            num_ofdm_symbols=4,
+            fft_size=12,
+            dmrs_symbol_indices=(1, 3),
+            num_layers=2,
+            num_rx_ant=2,
+        )
+        generator = SionnaSUMIMOBatchGenerator(
+            config,
+            snr_db_min=8.0,
+            snr_db_max=8.0,
+            phase_mode="fixed",
+            seed=8642,
+            device=self.device,
+            channel_profile=profile_path,
+        )
+        batch = generator.generate_batch(1)
+        self.assertEqual(batch["Y"].shape, (1, 2, 4, 12))
+        self.assertEqual(batch["H_hat"].shape, (1, 2, 2, 4, 12))
+        self.assertEqual(batch["channel_profile_name"], "umi_normalized")
+        self.assertEqual(batch["scenario"], "umi")
 
     def test_tiny_overfit_decreases_bce(self):
         torch.manual_seed(1357)

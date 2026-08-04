@@ -181,12 +181,22 @@ A complete default 2x2 training run is:
 
 ```bash
 python -m training.train_su_mimo \
+  --model su_mimo_phase_invariant \
   --num_layers 2 --num_rx_ant 2 --total_tx_power 1.0 \
+  --train_channel_profile configs/channel_profiles/tdl_mix_normalized.json \
+  --val_channel_profile configs/channel_profiles/tdl_mix_normalized.json \
   --train_phase_mode fixed --val_phase_mode uniform \
   --snr_db_min -5 --snr_db_max 20 \
   --num_train 10000 --num_val 2000 --epochs 50 --batch_size 64 \
   --seed 0 --save_dir runs/su_mimo_2x2_seed0
 ```
+
+The default widths (`hidden_complex=32`, `zero_real=22`, `hidden_real=66`)
+give exactly 204,599 trainable parameters, matching the existing
+`tdl_mix_normalized` SingleBranch and strict matched checkpoints. Select the
+equal-parameter phase-sensitive control with
+`--model su_mimo_phase_sensitive`. Both models keep layer-permutation
+equivariance; only the final readout's common-phase invariance differs.
 
 `best.pt` is selected by minimum validation BCE. `last.pt`, `history.csv`, and
 `resolved_config.json` are also saved. Resume from the full model and AdamW
@@ -209,14 +219,36 @@ python -m evaluation.eval_ber_su_mimo \
   --snr_list=-10,-8,-6,-4,-2,0,2,4,6,8,10,12,14,16,18,20 \
   --num_samples 4096 --batch_size 128 --seed 777000 \
   --common_random_numbers \
+  --eval_channel_profile configs/channel_profiles/tdl_mix_normalized.json \
   --out_csv runs/su_mimo_2x2_seed0/ber.csv
+```
+
+The same existing profile files can be used unchanged for SU-MIMO TDL, UMi,
+UMa, and mixed-profile runs. Select one profile component for a fixed-scenario
+test with `--eval_component_id`.
+
+For 5G NR LDPC evaluation, each layer carries one independent rate-matched
+codeword. The reported frame BLER counts a user frame as erroneous when any
+layer fails; the companion CSV reports per-layer BLER.
+
+```bash
+python -m evaluation.eval_bler_su_mimo \
+  --checkpoint runs/su_mimo_2x2_seed0/best.pt \
+  --ebno_list=-2,0,2,4,6,8 \
+  --coderate 0.5 --decoder_iterations 20 \
+  --batch_size 64 --target_block_errors 100 --max_blocks 20000 \
+  --seed 777000 --common_random_numbers \
+  --eval_channel_profile configs/channel_profiles/tdl_mix_normalized.json \
+  --out_csv runs/su_mimo_2x2_seed0/bler.csv
 ```
 
 The implementation is in `data/sionna_su_mimo_generator.py`,
 `models/su_mimo_invariant_net.py`, `training/train_su_mimo.py`, and
-`evaluation/eval_ber_su_mimo.py`. The initial TDL setup does not yet model a
-geometry-derived transmit-array correlation, precoding, CDM DMRS, variable
-layer counts during generation, or a classical MIMO evaluation baseline.
+`evaluation/eval_ber_su_mimo.py`, and `evaluation/eval_bler_su_mimo.py`. The
+initial setup does not yet model precoding, CDM DMRS, variable layer counts
+during generation, or a classical MIMO evaluation baseline. UMi/UMa profiles
+use the configured multi-antenna Sionna panel arrays and therefore include
+their geometry-derived spatial channel behavior.
 
 ## 5G NR LDPC and BLER
 

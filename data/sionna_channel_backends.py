@@ -204,6 +204,8 @@ class SionnaChannelBackend:
         self.config = config
         self.resource_grid = resource_grid
         self.device = torch.device(device)
+        self.num_rx_ant = int(getattr(config, "num_rx_ant", 1))
+        self.num_tx_ant = int(getattr(config, "num_layers", 1))
         self._runtimes = [self._build_runtime(c) for c in self.profile["components"]]
         self.sampler = ChannelProfileSampler(self.profile, seed=0)
         self.counts: Counter[str] = Counter()
@@ -226,22 +228,27 @@ class SionnaChannelBackend:
                 carrier_frequency=self.config.carrier_frequency_hz,
                 min_speed=0.0,
                 max_speed=max_speed_mps,
-                num_rx_ant=1,
-                num_tx_ant=1,
+                num_rx_ant=self.num_rx_ant,
+                num_tx_ant=self.num_tx_ant,
                 device=str(self.device),
             )
         else:
-            array_kwargs = dict(
+            common_array_kwargs = dict(
                 num_rows_per_panel=1,
-                num_cols_per_panel=1,
                 polarization="single",
                 polarization_type="V",
                 antenna_pattern="omni",
                 carrier_frequency=self.config.carrier_frequency_hz,
                 device=str(self.device),
             )
-            ut_array = PanelArray(**array_kwargs)
-            bs_array = PanelArray(**array_kwargs)
+            ut_array = PanelArray(
+                num_cols_per_panel=self.num_tx_ant,
+                **common_array_kwargs,
+            )
+            bs_array = PanelArray(
+                num_cols_per_panel=self.num_rx_ant,
+                **common_array_kwargs,
+            )
             model_class = UMi if backend == "umi" else UMa
             channel_model = model_class(
                 carrier_frequency=self.config.carrier_frequency_hz,

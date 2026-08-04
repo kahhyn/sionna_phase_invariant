@@ -15,14 +15,21 @@ from pathlib import Path
 
 import torch
 
-from data import SionnaSUMIMOBatchGenerator, SionnaSUMIMOConfig
-from models import SUMIMOPhaseInvariantReceiver
+from data import (
+    PROFILE_SCHEMA_VERSION,
+    SionnaSUMIMOBatchGenerator,
+    SionnaSUMIMOConfig,
+    channel_profile_hash,
+    legacy_channel_profile,
+    load_channel_profile,
+)
+from models import SU_MIMO_MODEL_CHOICES, build_su_mimo_model
 from utils.batching import batch_sizes
 from utils.checkpoints import load_su_mimo_checkpoint
 from utils.metrics import masked_bce_sum, masked_bce_with_logits, masked_error_count
 
 
-MODEL_NAME = "su_mimo_phase_invariant"
+TDL_MIX_REFERENCE_PARAMETERS = 204599
 HISTORY_FIELDS = [
     "epoch",
     "lr",
@@ -77,7 +84,16 @@ def build_model_config(args):
     }
 
 
-def build_generator(args, config, phase_mode, seed, device, snr_min=None, snr_max=None):
+def build_generator(
+    args,
+    config,
+    phase_mode,
+    seed,
+    device,
+    channel_profile,
+    snr_min=None,
+    snr_max=None,
+):
     return SionnaSUMIMOBatchGenerator(
         config,
         snr_db_min=args.snr_db_min if snr_min is None else snr_min,
@@ -85,6 +101,7 @@ def build_generator(args, config, phase_mode, seed, device, snr_min=None, snr_ma
         phase_mode=phase_mode,
         seed=seed,
         device=device,
+        channel_profile=channel_profile,
     )
 
 
@@ -187,6 +204,11 @@ def evaluate(model, generator, num_samples, batch_size):
 def parse_args(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--model",
+        default="su_mimo_phase_invariant",
+        choices=SU_MIMO_MODEL_CHOICES,
+    )
+    parser.add_argument(
         "--train_phase_mode", default="fixed", choices=["fixed", "narrow", "uniform"]
     )
     parser.add_argument(
@@ -224,13 +246,21 @@ def parse_args(argv=None):
         choices=["nn", "lin", "lin_time_avg"],
     )
     parser.add_argument("--no_normalize_channel", action="store_true")
+    parser.add_argument(
+        "--train_channel_profile",
+        help="Existing channel-profile JSON; legacy TDL arguments are used if omitted.",
+    )
+    parser.add_argument(
+        "--val_channel_profile",
+        help="Validation profile JSON; defaults to the training profile.",
+    )
 
-    parser.add_argument("--hidden_complex", type=int, default=16)
-    parser.add_argument("--zero_real", type=int, default=16)
-    parser.add_argument("--hidden_real", type=int, default=32)
+    parser.add_argument("--hidden_complex", type=int, default=32)
+    parser.add_argument("--zero_real", type=int, default=22)
+    parser.add_argument("--hidden_real", type=int, default=66)
     parser.add_argument("--num_iterations", type=int, default=2)
     parser.add_argument("--kernel_size", type=int, default=3)
-    parser.add_argument("--zero_gate_hidden", type=int, default=8)
+    parser.add_argument("--zero_gate_hidden", type=int, default=16)
 
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight_decay", type=float, default=0.0)
@@ -291,7 +321,7 @@ def main(argv=None):
     else:
         data_config = build_data_config(args)
         model_config = build_model_config(args)
-        model = SUMIMOPhaseInvariantReceiver(**model_config).to(device)
+        model = build_su_mimo_model(args.model, model_config).to(device)
 
     _validate_args(args, start_epoch)
     torch.manual_seed(args.seed)
@@ -312,11 +342,45 @@ def main(argv=None):
         if args.val_generator_seed is None
         else args.val_generator_seed
     )
+    if resumed_checkpoint is None:
+        train_profile = (
+            load_channel_profile(args.train_channel_profile)
+            if args.train_channel_profile
+            else legacy_channel_profile(data_config)
+        )
+        val_profile = (
+            load_channel_profile(args.val_channel_profile)
+            if args.val_channel_profile
+            else train_profile
+        )
+    else:
+        saved_train_profile = resumed_checkpoint.get("train_channel_profile")
+        saved_val_profile = resumed_checkpoint.get("val_channel_profile")
+        train_profile = (
+            legacy_channel_profile(data_config)
+            if saved_train_profile is None
+            else load_channel_profile(saved_train_profile)
+        )
+        val_profile = (
+            train_profile
+            if saved_val_profile is None
+            else load_channel_profile(saved_val_profile)
+        )
     train_generator = build_generator(
-        args, data_config, args.train_phase_mode, train_seed, device
+        args,
+        data_config,
+        args.train_phase_mode,
+        train_seed,
+        device,
+        train_profile,
     )
     val_generator = build_generator(
-        args, data_config, args.val_phase_mode, val_seed, device
+        args,
+        data_config,
+        args.val_phase_mode,
+        val_seed,
+        device,
+        val_profile,
     )
 
     optimizer = torch.optim.AdamW(
@@ -372,12 +436,16 @@ def main(argv=None):
     )
     command = shlex.join([sys.executable, *sys.argv])
     resolved = {
-        "model_name": MODEL_NAME,
+        "model_name": args.model,
         "model_config": model_config,
         "data_backend": "sionna_su_mimo",
         "sionna_su_mimo_config": data_config.to_dict(),
         "args": vars(args),
         "selection_rule": "minimum source-validation BCE",
+        "channel_profile_schema_version": PROFILE_SCHEMA_VERSION,
+        "train_channel_profile": train_profile,
+        "val_channel_profile": val_profile,
+        "channel_profile_hash": channel_profile_hash(train_profile),
         "code_revision": _git_revision(),
         "created_at_utc": created_at,
         "last_command": command,
@@ -388,7 +456,11 @@ def main(argv=None):
         json.dump(resolved, stream, indent=2, sort_keys=True)
 
     parameter_count = sum(parameter.numel() for parameter in model.parameters())
-    print(f"Device: {device} | model: {MODEL_NAME} | parameters: {parameter_count}")
+    print(f"Device: {device} | model: {args.model} | parameters: {parameter_count}")
+    print(
+        f"tdl_mix reference: {TDL_MIX_REFERENCE_PARAMETERS} | "
+        f"parameter delta: {parameter_count - TDL_MIX_REFERENCE_PARAMETERS:+d}"
+    )
     print(
         f"Topology: 1 user, {data_config.num_layers} layers, "
         f"{data_config.num_rx_ant} Rx | total Tx power {data_config.total_tx_power:g}"
@@ -396,6 +468,10 @@ def main(argv=None):
     print(
         f"Train phase: {args.train_phase_mode} | val phase: {args.val_phase_mode} | "
         f"train seed: {train_seed} | val seed: {val_seed}"
+    )
+    print(
+        f"Train profile: {train_profile['name']} | "
+        f"validation profile: {val_profile['name']}"
     )
     if resumed_checkpoint is not None:
         print(f"Resuming {args.resume_checkpoint} from epoch {start_epoch}")
@@ -418,6 +494,8 @@ def main(argv=None):
             "history": history,
             "train_generator_seed": train_seed,
             "val_generator_seed": val_seed,
+            "train_profile_counts": train_generator.channel_profile_counts,
+            "val_profile_counts": val_generator.channel_profile_counts,
             "resumed_from": args.resume_checkpoint,
         }
 
@@ -454,6 +532,10 @@ def main(argv=None):
             f"train BER {train_ber:.6f} ({train_errors}/{train_bits}) | "
             f"val BCE {val_bce:.6f} | val BER {val_ber:.6f} "
             f"({val_errors}/{val_bits})"
+        )
+        print(
+            f"  train profile batches: {train_generator.channel_profile_counts} | "
+            f"validation profile batches: {val_generator.channel_profile_counts}"
         )
 
         improved = val_bce < best_val_bce

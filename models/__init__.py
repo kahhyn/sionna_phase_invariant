@@ -26,7 +26,9 @@ from .classical_receivers import SionnaLMMSEBaseline
 from .su_mimo_invariant_net import (
     EquivariantLayerInteraction,
     SUMIMOPhaseInvariantReceiver,
+    SUMIMOPhaseSensitiveReceiver,
 )
+from .su_mimo_factory import SU_MIMO_MODEL_CHOICES, build_su_mimo_model
 from .factory import MODEL_CHOICES, build_model, build_model_from_args
 
 __all__ = [
@@ -52,6 +54,9 @@ __all__ = [
     "SionnaLMMSEBaseline",
     "EquivariantLayerInteraction",
     "SUMIMOPhaseInvariantReceiver",
+    "SUMIMOPhaseSensitiveReceiver",
+    "SU_MIMO_MODEL_CHOICES",
+    "build_su_mimo_model",
     "MODEL_CHOICES",
     "build_model",
     "build_model_from_args",

@@ -7,7 +7,7 @@ from data import (
     SionnaSUMIMOConfig,
     validate_channel_profile,
 )
-from models import SUMIMOPhaseInvariantReceiver
+from models import SU_MIMO_MODEL_CHOICES, build_su_mimo_model
 from models.factory import build_model_from_args
 
 
@@ -67,13 +67,31 @@ def load_su_mimo_checkpoint(checkpoint_path, device):
             "Checkpoint data_backend="
             f"{checkpoint.get('data_backend')!r}, expected 'sionna_su_mimo'."
         )
-    if checkpoint.get("model_name") != "su_mimo_phase_invariant":
+    if checkpoint.get("model_name") not in SU_MIMO_MODEL_CHOICES:
         raise ValueError(
             f"Unsupported SU-MIMO model: {checkpoint.get('model_name')!r}."
         )
 
     config = SionnaSUMIMOConfig(**checkpoint["sionna_su_mimo_config"])
-    model = SUMIMOPhaseInvariantReceiver(**checkpoint["model_config"]).to(device)
-    model.load_state_dict(checkpoint["model_state"], strict=True)
+    profile_version = checkpoint.get("channel_profile_schema_version")
+    if profile_version is not None:
+        if profile_version != PROFILE_SCHEMA_VERSION:
+            raise ValueError(
+                f"Checkpoint channel profile schema={profile_version!r}, "
+                f"expected {PROFILE_SCHEMA_VERSION}."
+            )
+        validate_channel_profile(checkpoint["train_channel_profile"])
+        validate_channel_profile(checkpoint["val_channel_profile"])
+    model = build_su_mimo_model(
+        checkpoint["model_name"], checkpoint["model_config"]
+    ).to(device)
+    incompatible = model.load_state_dict(checkpoint["model_state"], strict=False)
+    allowed_missing = {"input_scale"}
+    if set(incompatible.missing_keys) - allowed_missing or incompatible.unexpected_keys:
+        raise RuntimeError(
+            "Incompatible SU-MIMO checkpoint state: "
+            f"missing={incompatible.missing_keys}, "
+            f"unexpected={incompatible.unexpected_keys}."
+        )
     model.eval()
     return model, config, checkpoint

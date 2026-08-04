@@ -89,6 +89,26 @@ class EquivariantLayerInteraction(nn.Module):
         return (z + update) * active
 
 
+class EquivariantComplexReadout(nn.Module):
+    """Parameter-matched phase-sensitive counterpart to Hermitian readout."""
+
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.proj_a = ComplexConv2d(
+            in_channels, out_channels, kernel_size=3, padding=1, bias=False
+        )
+        self.proj_b = ComplexConv2d(
+            in_channels, out_channels, kernel_size=3, padding=1, bias=False
+        )
+        self.norm_proj_a = ComplexRMSNorm2d(out_channels)
+        self.norm_proj_b = ComplexRMSNorm2d(out_channels)
+
+    def forward(self, z):
+        projected = self.norm_proj_a(self.proj_a(z))
+        projected = projected + self.norm_proj_b(self.proj_b(z))
+        return torch.cat([projected.real, projected.imag], dim=1)
+
+
 class SUMIMOPhaseInvariantReceiver(nn.Module):
     """Common-phase invariant and layer-permutation equivariant SU-MIMO RX.
 
@@ -101,19 +121,22 @@ class SUMIMOPhaseInvariantReceiver(nn.Module):
     def __init__(
         self,
         num_rx_ant=2,
-        hidden_complex=16,
-        zero_real=16,
-        hidden_real=32,
+        hidden_complex=32,
+        zero_real=22,
+        hidden_real=66,
         bits_per_symbol=2,
         num_iterations=2,
         kernel_size=3,
-        zero_gate_hidden=8,
+        zero_gate_hidden=16,
+        phase_invariant_readout=True,
     ):
         super().__init__()
         if num_rx_ant <= 0 or num_iterations <= 0:
             raise ValueError("num_rx_ant and num_iterations must be positive.")
         self.num_rx_ant = int(num_rx_ant)
         self.bits_per_symbol = int(bits_per_symbol)
+        self.phase_invariant_readout = bool(phase_invariant_readout)
+        self.input_scale = nn.Parameter(torch.ones(2 * self.num_rx_ant))
 
         self.input_proj = ComplexConv2d(
             2 * self.num_rx_ant,
@@ -154,11 +177,17 @@ class SUMIMOPhaseInvariantReceiver(nn.Module):
             ]
         )
 
-        self.readout = HermitianInvariantReadout(
-            in_channels=hidden_complex,
-            out_channels=zero_real,
-            mode="low_rank",
-        )
+        if self.phase_invariant_readout:
+            self.readout = HermitianInvariantReadout(
+                in_channels=hidden_complex,
+                out_channels=zero_real,
+                mode="low_rank",
+            )
+        else:
+            self.readout = EquivariantComplexReadout(
+                in_channels=hidden_complex,
+                out_channels=zero_real,
+            )
         readout_channels = 2 * zero_real
         self.readout_mix = nn.Conv2d(
             readout_channels, readout_channels, kernel_size=1
@@ -221,6 +250,7 @@ class SUMIMOPhaseInvariantReceiver(nn.Module):
             num_symbols,
             num_subcarriers,
         )
+        z = z * self.input_scale.view(1, -1, 1, 1)
         flat_zero = zero_features.reshape(
             batch_size * num_layers, 2, num_symbols, num_subcarriers
         )
@@ -276,3 +306,10 @@ class SUMIMOPhaseInvariantReceiver(nn.Module):
             batch_size, num_layers, 1, 1, 1
         )
         return logits * active
+
+
+class SUMIMOPhaseSensitiveReceiver(SUMIMOPhaseInvariantReceiver):
+    """Layer-equivariant matched control without common-phase invariance."""
+
+    def __init__(self, **kwargs):
+        super().__init__(phase_invariant_readout=False, **kwargs)

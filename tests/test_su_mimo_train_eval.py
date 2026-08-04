@@ -36,10 +36,18 @@ class SUMIMOTrainEvalCLITest(unittest.TestCase):
             run_dir = Path(tmpdir) / "run"
             aggregate_csv = Path(tmpdir) / "ber.csv"
             layer_csv = Path(tmpdir) / "ber_layers.csv"
+            bler_csv = Path(tmpdir) / "bler.csv"
+            bler_layer_csv = Path(tmpdir) / "bler_layers.csv"
+            profile = (
+                self.repo_root
+                / "configs/channel_profiles/tdl_a_10_30_100_mix_normalized.json"
+            )
 
             first = self._run(
                 "-m",
                 "training.train_su_mimo",
+                "--model",
+                "su_mimo_phase_sensitive",
                 "--num_train",
                 "1",
                 "--num_val",
@@ -71,6 +79,10 @@ class SUMIMOTrainEvalCLITest(unittest.TestCase):
                 "4",
                 "--save_dir",
                 str(run_dir),
+                "--train_channel_profile",
+                str(profile),
+                "--val_channel_profile",
+                str(profile),
                 "--seed",
                 "31415",
                 "--log_interval",
@@ -101,6 +113,11 @@ class SUMIMOTrainEvalCLITest(unittest.TestCase):
             self.assertEqual(checkpoint["epoch"], 2)
             self.assertEqual(len(checkpoint["history"]), 2)
             self.assertEqual(checkpoint["data_backend"], "sionna_su_mimo")
+            self.assertEqual(checkpoint["model_name"], "su_mimo_phase_sensitive")
+            self.assertEqual(
+                checkpoint["train_channel_profile"]["name"],
+                "tdl_A_10_30_100_mix_normalized",
+            )
             self.assertEqual(checkpoint["sionna_su_mimo_config"]["fft_size"], 12)
             with (run_dir / "history.csv").open(newline="") as stream:
                 history_rows = list(csv.DictReader(stream))
@@ -127,6 +144,10 @@ class SUMIMOTrainEvalCLITest(unittest.TestCase):
                 str(aggregate_csv),
                 "--out_layer_csv",
                 str(layer_csv),
+                "--eval_channel_profile",
+                str(profile),
+                "--eval_component_id",
+                "tdl_A_10ns",
             )
             self.assertIn("errors", evaluated.stdout)
             with aggregate_csv.open(newline="") as stream:
@@ -148,6 +169,42 @@ class SUMIMOTrainEvalCLITest(unittest.TestCase):
                     for row in aggregate_rows
                 )
             )
+
+            bler = self._run(
+                "-m",
+                "evaluation.eval_bler_su_mimo",
+                "--checkpoint",
+                str(run_dir / "best.pt"),
+                "--ebno_list",
+                "4",
+                "--coderate",
+                "0.5",
+                "--decoder_iterations",
+                "2",
+                "--batch_size",
+                "1",
+                "--target_block_errors",
+                "1",
+                "--max_blocks",
+                "1",
+                "--eval_channel_profile",
+                str(profile),
+                "--eval_component_id",
+                "tdl_A_10ns",
+                "--out_csv",
+                str(bler_csv),
+                "--out_layer_csv",
+                str(bler_layer_csv),
+            )
+            self.assertIn("frame BLER", bler.stdout)
+            with bler_csv.open(newline="") as stream:
+                bler_rows = list(csv.DictReader(stream))
+            with bler_layer_csv.open(newline="") as stream:
+                bler_layer_rows = list(csv.DictReader(stream))
+            self.assertEqual(len(bler_rows), 1)
+            self.assertEqual(len(bler_layer_rows), 2)
+            self.assertEqual(int(bler_rows[0]["num_blocks"]), 1)
+            self.assertEqual(int(bler_rows[0]["num_layer_blocks"]), 2)
 
 
 if __name__ == "__main__":
