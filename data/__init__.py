@@ -14,6 +14,10 @@ from .sionna_ofdm_generator import (
     SionnaOFDMBatchGenerator,
     SionnaOFDMConfig,
 )
+from .sionna_su_mimo_generator import (
+    SionnaSUMIMOBatchGenerator,
+    SionnaSUMIMOConfig,
+)
 
 __all__ = [
     "OFDMDataset",
@@ -21,6 +25,8 @@ __all__ = [
     "Sionna5GLDPCBatchGenerator",
     "SionnaOFDMConfig",
     "SionnaLDPC5GConfig",
+    "SionnaSUMIMOBatchGenerator",
+    "SionnaSUMIMOConfig",
     "PROFILE_SCHEMA_VERSION",
     "load_channel_profile",
     "validate_channel_profile",

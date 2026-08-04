@@ -156,8 +156,67 @@ SNR_DB_MIN=-10 SNR_DB_MAX=20 USE_EXISTING_SEED0=0 INCLUDE_GATE_ABLATIONS=1 RUN_R
 
 This stage uses an ideal frequency-domain OFDM channel without waveform-level
 ICI/ISI. It supports full-symbol and comb DMRS patterns. Channel coding,
-waveform modulation with cyclic prefix, LMMSE estimation/equalization,
-higher-order QAM, and MIMO are intentionally left for later migration stages.
+waveform modulation with cyclic prefix, LMMSE estimation/equalization, and
+higher-order QAM are intentionally left for later migration stages. The
+SU-MIMO path below is a fixed-topology first stage rather than a general
+precoding or variable-rank implementation.
+
+### Minimal 2x2 SU-MIMO smoke stage
+
+The repository now contains an isolated first MIMO migration stage with one
+user, two spatial layers, two receive antennas, identity layer-to-antenna
+mapping, FDM-orthogonal DMRS, and fixed total user transmit power. Data power
+is split equally between the two layers. The accompanying receiver preserves
+common-phase invariance and layer-permutation equivariance through shared
+complex backbones and an equivariant masked-mean message-passing layer.
+
+Run its data, forward/backward, checkpoint, phase, permutation, tiny-overfit,
+training-resume, and BER-export checks with:
+
+```bash
+python -m unittest tests.test_su_mimo_smoke tests.test_su_mimo_train_eval -v
+```
+
+A complete default 2x2 training run is:
+
+```bash
+python -m training.train_su_mimo \
+  --num_layers 2 --num_rx_ant 2 --total_tx_power 1.0 \
+  --train_phase_mode fixed --val_phase_mode uniform \
+  --snr_db_min -5 --snr_db_max 20 \
+  --num_train 10000 --num_val 2000 --epochs 50 --batch_size 64 \
+  --seed 0 --save_dir runs/su_mimo_2x2_seed0
+```
+
+`best.pt` is selected by minimum validation BCE. `last.pt`, `history.csv`, and
+`resolved_config.json` are also saved. Resume from the full model and AdamW
+state by setting a new total target epoch; data and model settings are restored
+from the checkpoint:
+
+```bash
+python -m training.train_su_mimo \
+  --resume_checkpoint runs/su_mimo_2x2_seed0/last.pt \
+  --epochs 100
+```
+
+Evaluate the validation-selected checkpoint with aggregate and per-layer BER,
+exact error counts, and Wilson 95% intervals:
+
+```bash
+python -m evaluation.eval_ber_su_mimo \
+  --checkpoint runs/su_mimo_2x2_seed0/best.pt \
+  --phase_mode uniform \
+  --snr_list=-10,-8,-6,-4,-2,0,2,4,6,8,10,12,14,16,18,20 \
+  --num_samples 4096 --batch_size 128 --seed 777000 \
+  --common_random_numbers \
+  --out_csv runs/su_mimo_2x2_seed0/ber.csv
+```
+
+The implementation is in `data/sionna_su_mimo_generator.py`,
+`models/su_mimo_invariant_net.py`, `training/train_su_mimo.py`, and
+`evaluation/eval_ber_su_mimo.py`. The initial TDL setup does not yet model a
+geometry-derived transmit-array correlation, precoding, CDM DMRS, variable
+layer counts during generation, or a classical MIMO evaluation baseline.
 
 ## 5G NR LDPC and BLER
 

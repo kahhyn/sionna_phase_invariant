@@ -2,7 +2,12 @@
 
 import torch
 
-from data import PROFILE_SCHEMA_VERSION, validate_channel_profile
+from data import (
+    PROFILE_SCHEMA_VERSION,
+    SionnaSUMIMOConfig,
+    validate_channel_profile,
+)
+from models import SUMIMOPhaseInvariantReceiver
 from models.factory import build_model_from_args
 
 
@@ -48,3 +53,27 @@ def load_receiver_checkpoint(
     model.load_state_dict(checkpoint["model_state"])
     model.eval()
     return model, checkpoint
+
+
+def load_su_mimo_checkpoint(checkpoint_path, device):
+    """Load and reconstruct a checkpoint from ``training.train_su_mimo``."""
+    checkpoint = torch.load(
+        checkpoint_path,
+        map_location=device,
+        weights_only=True,
+    )
+    if checkpoint.get("data_backend") != "sionna_su_mimo":
+        raise ValueError(
+            "Checkpoint data_backend="
+            f"{checkpoint.get('data_backend')!r}, expected 'sionna_su_mimo'."
+        )
+    if checkpoint.get("model_name") != "su_mimo_phase_invariant":
+        raise ValueError(
+            f"Unsupported SU-MIMO model: {checkpoint.get('model_name')!r}."
+        )
+
+    config = SionnaSUMIMOConfig(**checkpoint["sionna_su_mimo_config"])
+    model = SUMIMOPhaseInvariantReceiver(**checkpoint["model_config"]).to(device)
+    model.load_state_dict(checkpoint["model_state"], strict=True)
+    model.eval()
+    return model, config, checkpoint

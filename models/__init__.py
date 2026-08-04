@@ -23,6 +23,10 @@ from .single_invariant_net import (
     StrictMatchedN0GatedComplexCNN,
 )
 from .classical_receivers import SionnaLMMSEBaseline
+from .su_mimo_invariant_net import (
+    EquivariantLayerInteraction,
+    SUMIMOPhaseInvariantReceiver,
+)
 from .factory import MODEL_CHOICES, build_model, build_model_from_args
 
 __all__ = [
@@ -46,6 +50,8 @@ __all__ = [
     "MatchedN0GatedComplexCNN",
     "StrictMatchedN0GatedComplexCNN",
     "SionnaLMMSEBaseline",
+    "EquivariantLayerInteraction",
+    "SUMIMOPhaseInvariantReceiver",
     "MODEL_CHOICES",
     "build_model",
     "build_model_from_args",
