@@ -1,0 +1,461 @@
+{
+  "args": {
+    "batch_size": 64,
+    "carrier_frequency_hz": 3500000000.0,
+    "cyclic_prefix_length": 0,
+    "delay_spread_s": 1e-08,
+    "device": "cuda",
+    "dmrs_symbols": [
+      2,
+      11
+    ],
+    "epochs": 50,
+    "fft_size": 72,
+    "hidden_complex": 32,
+    "hidden_real": 66,
+    "kernel_size": 3,
+    "log_interval": 50,
+    "lr": 0.001,
+    "ls_interpolation_type": "lin",
+    "max_doppler_hz": 200.0,
+    "model": "su_mimo_phase_invariant",
+    "no_normalize_channel": false,
+    "num_iterations": 2,
+    "num_layers": 2,
+    "num_ofdm_symbols": 14,
+    "num_rx_ant": 16,
+    "num_train": 10000,
+    "num_val": 2000,
+    "resume_checkpoint": null,
+    "save_dir": "runs/su_mimo_tdl_mix_rx_ablation_seed0/rx16_phase_invariant",
+    "seed": 0,
+    "snr_db_max": 20.0,
+    "snr_db_min": -5.0,
+    "subcarrier_spacing_hz": 30000.0,
+    "tdl_model": "A",
+    "total_tx_power": 1.0,
+    "train_channel_profile": "configs/channel_profiles/tdl_mix_normalized.json",
+    "train_generator_seed": null,
+    "train_phase_mode": "fixed",
+    "val_channel_profile": "configs/channel_profiles/tdl_mix_normalized.json",
+    "val_generator_seed": null,
+    "val_phase_mode": "fixed",
+    "weight_decay": 0.0,
+    "zero_gate_hidden": 16,
+    "zero_real": 22
+  },
+  "channel_profile_hash": "e5f3ebcc09e729f175c0bb1a20f80d2f533b72eacef7f988a333ff35da88dfdf",
+  "channel_profile_schema_version": 1,
+  "code_revision": "79d87d4ec84a48602ab3f04eb72604cdb7d5fc76",
+  "created_at_utc": "2026-08-04T16:15:05.806961+00:00",
+  "cuda_device": "NVIDIA GeForce RTX 4060",
+  "data_backend": "sionna_su_mimo",
+  "last_command": "/home/ahhy/venvs/sionna-pi/bin/python /home/ahhy/projects/phase_invariant_receiver_sionna/training/train_su_mimo.py --num_layers 2 --total_tx_power 1.0 --train_channel_profile configs/channel_profiles/tdl_mix_normalized.json --val_channel_profile configs/channel_profiles/tdl_mix_normalized.json --train_phase_mode fixed --val_phase_mode fixed --snr_db_min -5 --snr_db_max 20 --num_train 10000 --num_val 2000 --epochs 50 --batch_size 64 --hidden_complex 32 --zero_real 22 --hidden_real 66 --num_iterations 2 --kernel_size 3 --zero_gate_hidden 16 --lr 1e-3 --weight_decay 0 --seed 0 --log_interval 50 --device cuda --model su_mimo_phase_invariant --num_rx_ant 16 --save_dir runs/su_mimo_tdl_mix_rx_ablation_seed0/rx16_phase_invariant",
+  "model_config": {
+    "bits_per_symbol": 2,
+    "hidden_complex": 32,
+    "hidden_real": 66,
+    "kernel_size": 3,
+    "num_iterations": 2,
+    "num_rx_ant": 16,
+    "zero_gate_hidden": 16,
+    "zero_real": 22
+  },
+  "model_name": "su_mimo_phase_invariant",
+  "selection_rule": "minimum source-validation BCE",
+  "sionna_su_mimo_config": {
+    "bits_per_symbol": 2,
+    "carrier_frequency_hz": 3500000000.0,
+    "cyclic_prefix_length": 0,
+    "delay_spread_s": 1e-08,
+    "dmrs_symbol_indices": [
+      2,
+      11
+    ],
+    "fft_size": 72,
+    "ls_interpolation_type": "lin",
+    "max_doppler_hz": 200.0,
+    "normalize_channel": true,
+    "num_layers": 2,
+    "num_ofdm_symbols": 14,
+    "num_rx_ant": 16,
+    "subcarrier_spacing_hz": 30000.0,
+    "tdl_model": "A",
+    "total_tx_power": 1.0
+  },
+  "torch_version": "2.13.0+cu130",
+  "train_channel_profile": {
+    "components": [
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 10,
+        "id": "tdl_A_10ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "A",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 30,
+        "id": "tdl_A_30ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "A",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 100,
+        "id": "tdl_A_100ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "A",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 300,
+        "id": "tdl_A_300ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "A",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 10,
+        "id": "tdl_B_10ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "B",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 30,
+        "id": "tdl_B_30ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "B",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 100,
+        "id": "tdl_B_100ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "B",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 300,
+        "id": "tdl_B_300ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "B",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 10,
+        "id": "tdl_C_10ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "C",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 30,
+        "id": "tdl_C_30ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "C",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 100,
+        "id": "tdl_C_100ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "C",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 300,
+        "id": "tdl_C_300ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "C",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 10,
+        "id": "tdl_D_10ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "D",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 30,
+        "id": "tdl_D_30ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "D",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 100,
+        "id": "tdl_D_100ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "D",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 300,
+        "id": "tdl_D_300ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "D",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 10,
+        "id": "tdl_E_10ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "E",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 30,
+        "id": "tdl_E_30ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "E",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 100,
+        "id": "tdl_E_100ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "E",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 300,
+        "id": "tdl_E_300ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "E",
+        "weight": 1.0
+      }
+    ],
+    "name": "tdl_mix_normalized",
+    "sampling": "balanced_batch",
+    "schema_version": 1
+  },
+  "val_channel_profile": {
+    "components": [
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 10,
+        "id": "tdl_A_10ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "A",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 30,
+        "id": "tdl_A_30ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "A",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 100,
+        "id": "tdl_A_100ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "A",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 300,
+        "id": "tdl_A_300ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "A",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 10,
+        "id": "tdl_B_10ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "B",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 30,
+        "id": "tdl_B_30ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "B",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 100,
+        "id": "tdl_B_100ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "B",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 300,
+        "id": "tdl_B_300ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "B",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 10,
+        "id": "tdl_C_10ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "C",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 30,
+        "id": "tdl_C_30ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "C",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 100,
+        "id": "tdl_C_100ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "C",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 300,
+        "id": "tdl_C_300ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "C",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 10,
+        "id": "tdl_D_10ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "D",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 30,
+        "id": "tdl_D_30ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "D",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 100,
+        "id": "tdl_D_100ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "D",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 300,
+        "id": "tdl_D_300ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "D",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 10,
+        "id": "tdl_E_10ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "E",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 30,
+        "id": "tdl_E_30ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "E",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 100,
+        "id": "tdl_E_100ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "E",
+        "weight": 1.0
+      },
+      {
+        "backend": "tdl",
+        "delay_spread_ns": 300,
+        "id": "tdl_E_300ns",
+        "max_doppler_hz": 200,
+        "normalize_channel": true,
+        "tdl_model": "E",
+        "weight": 1.0
+      }
+    ],
+    "name": "tdl_mix_normalized",
+    "sampling": "balanced_batch",
+    "schema_version": 1
+  }
+}

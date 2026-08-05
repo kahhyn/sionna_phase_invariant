@@ -18,7 +18,10 @@ generalization/
 ├── tdl_mix_normalized/
 │   ├── single_branch_n0_gate_seed{0,1,2}.pt
 │   ├── strict_matched_complex_p_n0_gate_seed{0,1,2}.pt
-│   └── real_imag_cnn_seed{0,1,2}.pt
+│   ├── real_imag_cnn_seed{0,1,2}.pt
+│   └── su_mimo_rx_ablation_seed0/
+│       ├── su_mimo_phase_invariant_rx{2,16}_seed0.pt
+│       └── su_mimo_phase_sensitive_rx{2,16}_seed0.pt
 ├── umi_normalized/
 │   ├── single_branch_n0_gate_seed{0,1,2}.pt
 │   └── real_imag_cnn_seed{0,1,2}.pt
@@ -29,7 +32,8 @@ generalization/
 └── results/
     ├── realimag_matched_four_domains/
     ├── single_branch_missing_controls/
-    └── capacity_screen_umi/
+    ├── capacity_screen_umi/
+    └── su_mimo_tdl_mix_rx_ablation_seed0/
 ```
 
 - `single_branch_n0_gate` is model A.
@@ -43,6 +47,13 @@ generalization/
 - Capacity-screen checkpoints use one UMi training seed, 30 epochs, 5,000
   training samples per epoch, and matched sizes of approximately 20k or 50k
   parameters. They are exploratory rather than publication-ready evidence.
+- The SU-MIMO directory contains a single-seed 2-layer receive-antenna and
+  readout ablation. All four runs use the same widths, fixed-phase training and
+  validation, 10,000/2,000 samples, 50 epochs, batch size 64, and an SNR range
+  of -5 to 20 dB. The 2-Rx models have 204,599 parameters and the 16-Rx models
+  have 220,755 because the input projection sees more receive channels. These
+  runs are completed exploratory evidence: three validation optima occur at
+  epoch 50 and only seed 0 is available.
 - The TDL mix is balanced over TDL-A through TDL-E and RMS delay spreads
   10/30/100/300 ns.
 - The urban mix is balanced over normalized UMi and UMa uplink channels with

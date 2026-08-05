@@ -10,6 +10,9 @@ smoke-test outputs.
   controls needed to pair with those RealImagCNN runs.
 - `capacity_screen_umi/` contains the exploratory 20k/50k UMi training histories
   and paired UMi/UMa evaluation CSVs.
+- `su_mimo_tdl_mix_rx_ablation_seed0/` contains the four 2-layer SU-MIMO
+  training histories, resolved configurations, and validation-best checkpoint
+  summary for the 2/16-Rx phase-invariant and phase-sensitive models.
 
 The capacity screen uses one training seed, 30 epochs, 5,000 online training
 samples per epoch, one evaluation seed, and SNR points `-10,0,10,16,20`. It is
