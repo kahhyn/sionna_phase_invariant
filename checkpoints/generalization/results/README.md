@@ -13,6 +13,9 @@ smoke-test outputs.
 - `su_mimo_tdl_mix_rx_ablation_seed0/` contains the four 2-layer SU-MIMO
   training histories, resolved configurations, and validation-best checkpoint
   summary for the 2/16-Rx phase-invariant and phase-sensitive models.
+- `su_mimo_legacy_uniform_val_seed0/` preserves the historical 2-layer, 16-Rx
+  phase-sensitive seed-0 run selected using uniform-phase validation. Its stale
+  epoch-30 BLER CSVs are excluded from the epoch-49 checkpoint archive.
 
 The capacity screen uses one training seed, 30 epochs, 5,000 online training
 samples per epoch, one evaluation seed, and SNR points `-10,0,10,16,20`. It is

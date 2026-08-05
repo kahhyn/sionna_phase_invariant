@@ -19,9 +19,11 @@ generalization/
 │   ├── single_branch_n0_gate_seed{0,1,2}.pt
 │   ├── strict_matched_complex_p_n0_gate_seed{0,1,2}.pt
 │   ├── real_imag_cnn_seed{0,1,2}.pt
-│   └── su_mimo_rx_ablation_seed0/
+│   ├── su_mimo_rx_ablation_seed0/
 │       ├── su_mimo_phase_invariant_rx{2,16}_seed0.pt
 │       └── su_mimo_phase_sensitive_rx{2,16}_seed0.pt
+│   └── su_mimo_legacy_uniform_val_seed0/
+│       └── su_mimo_phase_sensitive_rx16_uniform_val_seed0.pt
 ├── umi_normalized/
 │   ├── single_branch_n0_gate_seed{0,1,2}.pt
 │   └── real_imag_cnn_seed{0,1,2}.pt
@@ -33,7 +35,8 @@ generalization/
     ├── realimag_matched_four_domains/
     ├── single_branch_missing_controls/
     ├── capacity_screen_umi/
-    └── su_mimo_tdl_mix_rx_ablation_seed0/
+    ├── su_mimo_tdl_mix_rx_ablation_seed0/
+    └── su_mimo_legacy_uniform_val_seed0/
 ```
 
 - `single_branch_n0_gate` is model A.
@@ -54,6 +57,10 @@ generalization/
   have 220,755 because the input projection sees more receive channels. These
   runs are completed exploratory evidence: three validation optima occur at
   epoch 50 and only seed 0 is available.
+- `su_mimo_legacy_uniform_val_seed0` preserves the historical checkpoint from
+  the misleadingly named `runs/su_mimo_2x2_seed0/` directory. It is actually a
+  2-layer, 16-Rx phase-sensitive model selected using uniform-phase validation,
+  so it is archived separately from the fixed-validation Rx ablation.
 - The TDL mix is balanced over TDL-A through TDL-E and RMS delay spreads
   10/30/100/300 ns.
 - The urban mix is balanced over normalized UMi and UMa uplink channels with
