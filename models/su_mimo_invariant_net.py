@@ -109,6 +109,82 @@ class EquivariantComplexReadout(nn.Module):
         return torch.cat([projected.real, projected.imag], dim=1)
 
 
+class CanonicalPhaseInvariantReadout(nn.Module):
+    """Remove one shared phase while retaining canonical complex features.
+
+    Two parameter-matched equivariant projections are used. The first produces
+    the features exposed to the real LLR head. The second produces candidates
+    for a single reference phase shared by every layer and resource element in
+    a batch item. Magnitude-only attention selects a stable reference without
+    changing under a common phase rotation.
+    """
+
+    def __init__(self, in_channels, out_channels, reference_temperature=8.0, eps=1e-6):
+        super().__init__()
+        self.reference_temperature = float(reference_temperature)
+        self.eps = float(eps)
+        self.proj_a = ComplexConv2d(
+            in_channels, out_channels, kernel_size=3, padding=1, bias=False
+        )
+        self.proj_b = ComplexConv2d(
+            in_channels, out_channels, kernel_size=3, padding=1, bias=False
+        )
+        self.norm_proj_a = ComplexRMSNorm2d(out_channels)
+        self.norm_proj_b = ComplexRMSNorm2d(out_channels)
+
+    def forward(self, z, layer_mask=None):
+        if z.dim() != 5 or not torch.is_complex(z):
+            raise ValueError("z must be complex with shape [B, L, C, T, F].")
+        batch_size, num_layers, channels, num_symbols, num_subcarriers = z.shape
+        if layer_mask is None:
+            layer_mask = torch.ones(
+                batch_size, num_layers, dtype=torch.bool, device=z.device
+            )
+        if layer_mask.shape != (batch_size, num_layers):
+            raise ValueError("layer_mask must have shape [B, L].")
+
+        flat = z.reshape(
+            batch_size * num_layers, channels, num_symbols, num_subcarriers
+        )
+        features = self.norm_proj_a(self.proj_a(flat)).reshape(
+            batch_size,
+            num_layers,
+            -1,
+            num_symbols,
+            num_subcarriers,
+        )
+        anchors = self.norm_proj_b(self.proj_b(flat)).reshape(features.shape)
+
+        active = layer_mask.to(device=z.device, dtype=torch.bool).view(
+            batch_size, num_layers, 1, 1, 1
+        )
+        scores = self.reference_temperature * anchors.abs()
+        scores = scores.masked_fill(~active, torch.finfo(scores.dtype).min)
+        weights = torch.softmax(scores.flatten(start_dim=1), dim=1).reshape(
+            scores.shape
+        )
+        weights = weights * active.to(dtype=weights.dtype)
+        weights = weights / weights.flatten(start_dim=1).sum(
+            dim=1, keepdim=True
+        ).clamp_min(self.eps).view(batch_size, 1, 1, 1, 1)
+
+        reference = (weights * anchors).sum(
+            dim=(1, 2, 3, 4), keepdim=True
+        )
+        inverse_phase = torch.conj(reference) * torch.rsqrt(
+            reference.abs().square() + self.eps
+        )
+        canonical = features * inverse_phase
+        canonical = canonical * active.to(dtype=canonical.real.dtype)
+        canonical = torch.cat([canonical.real, canonical.imag], dim=2)
+        return canonical.reshape(
+            batch_size * num_layers,
+            2 * features.shape[2],
+            num_symbols,
+            num_subcarriers,
+        )
+
+
 class SUMIMOPhaseInvariantReceiver(nn.Module):
     """Common-phase invariant and layer-permutation equivariant SU-MIMO RX.
 
@@ -129,6 +205,7 @@ class SUMIMOPhaseInvariantReceiver(nn.Module):
         kernel_size=3,
         zero_gate_hidden=16,
         phase_invariant_readout=True,
+        canonical_phase_readout=False,
     ):
         super().__init__()
         if num_rx_ant <= 0 or num_iterations <= 0:
@@ -136,6 +213,11 @@ class SUMIMOPhaseInvariantReceiver(nn.Module):
         self.num_rx_ant = int(num_rx_ant)
         self.bits_per_symbol = int(bits_per_symbol)
         self.phase_invariant_readout = bool(phase_invariant_readout)
+        self.canonical_phase_readout = bool(canonical_phase_readout)
+        if self.canonical_phase_readout and not self.phase_invariant_readout:
+            raise ValueError(
+                "canonical_phase_readout requires phase_invariant_readout."
+            )
         self.input_scale = nn.Parameter(torch.ones(2 * self.num_rx_ant))
 
         self.input_proj = ComplexConv2d(
@@ -177,7 +259,12 @@ class SUMIMOPhaseInvariantReceiver(nn.Module):
             ]
         )
 
-        if self.phase_invariant_readout:
+        if self.canonical_phase_readout:
+            self.readout = CanonicalPhaseInvariantReadout(
+                in_channels=hidden_complex,
+                out_channels=zero_real,
+            )
+        elif self.phase_invariant_readout:
             self.readout = HermitianInvariantReadout(
                 in_channels=hidden_complex,
                 out_channels=zero_real,
@@ -280,7 +367,17 @@ class SUMIMOPhaseInvariantReceiver(nn.Module):
             )
             z = zero_gate(z, flat_zero)
 
-        invariant = self.readout(z)
+        if self.canonical_phase_readout:
+            structured_z = z.reshape(
+                batch_size,
+                num_layers,
+                hidden_complex,
+                num_symbols,
+                num_subcarriers,
+            )
+            invariant = self.readout(structured_z, layer_mask=layer_mask)
+        else:
+            invariant = self.readout(z)
         invariant = self.readout_mix(invariant)
         llr_input = torch.cat(
             [
@@ -313,3 +410,14 @@ class SUMIMOPhaseSensitiveReceiver(SUMIMOPhaseInvariantReceiver):
 
     def __init__(self, **kwargs):
         super().__init__(phase_invariant_readout=False, **kwargs)
+
+
+class SUMIMOCanonicalPhaseReceiver(SUMIMOPhaseInvariantReceiver):
+    """Layer-equivariant receiver using shared-reference phase canonicalization."""
+
+    def __init__(self, **kwargs):
+        super().__init__(
+            phase_invariant_readout=True,
+            canonical_phase_readout=True,
+            **kwargs,
+        )

@@ -589,7 +589,48 @@ bash scripts/run_dichasus.sh \
 固定相位结果完成后，换一个 `RUN_ROOT` 并设置 `PHASE_MODE=uniform`，测试真实信道失配
 与公共相位失配同时存在时的效果。
 
-## 11. 复现实验注意事项
+## 11. SU-MIMO perfect-CSI 与 oracle LMMSE 诊断
+
+`evaluation.eval_bler_su_mimo` 的 `--receiver` 支持四种接收机。它们共用 checkpoint
+中的资源网格、层数、接收天线数和总发射功率配置；LMMSE 模式不会使用 checkpoint
+的神经网络权重。
+
+| `--receiver` | 检测器 | CSI | 用途 |
+|---|---|---|---|
+| `neural` | checkpoint 神经网络 | LS | 原始结果 |
+| `neural_perfect` | 同一个神经网络 | 真实 `H` | 隔离信道估计误差 |
+| `lmmse_ls` | Sionna LMMSE | LS 与估计误差方差 | 传统接收机对照 |
+| `lmmse_perfect` | Sionna LMMSE | 真实 `H`、精确 `N0` | oracle LMMSE 对照 |
+
+四条曲线必须使用完全相同的 checkpoint、profile、Eb/N0、seed、batch size 和停止规则，
+并分别指定输出文件，避免默认 CSV 互相覆盖。例如：
+
+```bash
+CKPT=runs/su_mimo_tdl_mix_rx_ablation_warmup_cosine_tail30_seed0/rx16_phase_sensitive/best.pt
+PROFILE=configs/channel_profiles/umi_normalized.json
+
+for RECEIVER in neural neural_perfect lmmse_ls lmmse_perfect; do
+  python -m evaluation.eval_bler_su_mimo \
+    --receiver "$RECEIVER" \
+    --checkpoint "$CKPT" \
+    --ebno_list=3,5,7,9,11,13 \
+    --batch_size 16 \
+    --target_block_errors 500 \
+    --max_blocks 20000 \
+    --seed 777000 \
+    --eval_channel_profile "$PROFILE" \
+    --out_csv "runs/su_mimo_diagnostics/umi_${RECEIVER}.csv"
+done
+```
+
+`lmmse_perfect` 是已知真实信道和噪声方差的线性 MMSE 检测器，不是 ML 检测器或容量
+上界；当层信道接近秩亏时，它仍可能出现明显 BLER 平台。解释时建议按以下顺序判断：
+
+1. `neural` 到 `neural_perfect` 的提升表示 CSI 估计误差所占的部分；
+2. `neural_perfect` 到 `lmmse_perfect` 的差异反映学习型检测器与 oracle 线性检测器的差异；
+3. 若 `lmmse_perfect` 仍有平台，应优先检查空间信道条件数、层间相关性和可分离性。
+
+## 12. 复现实验注意事项
 
 1. A/C 对比应使用相同评估 seed，并保持 profile、样本数和 SNR 完全相同。BER 脚本的
    `--common_random_numbers` 还会固定各 SNR 点的基础随机量；QuaDRiGa 评估器内部对

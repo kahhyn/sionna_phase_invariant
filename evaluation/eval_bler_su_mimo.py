@@ -18,6 +18,7 @@ from data import (
     profile_component,
 )
 from evaluation.eval_ber_su_mimo import wilson_interval
+from models import SionnaSUMIMOLMMSEBaseline
 from utils.checkpoints import load_su_mimo_checkpoint
 
 
@@ -31,6 +32,7 @@ def parse_float_list(text):
 @torch.no_grad()
 def evaluate_ebno(
     model,
+    receiver_type,
     config,
     channel_profile,
     ldpc_config,
@@ -53,6 +55,13 @@ def evaluate_ebno(
         channel_profile=channel_profile,
     )
     model.eval()
+    classical_receiver = None
+    if receiver_type == "lmmse_ls":
+        classical_receiver = SionnaSUMIMOLMMSEBaseline(generator, csi="ls")
+    elif receiver_type == "lmmse_perfect":
+        classical_receiver = SionnaSUMIMOLMMSEBaseline(
+            generator, csi="perfect"
+        )
     num_frames = 0
     frame_errors = 0
     info_bit_errors = 0
@@ -65,15 +74,26 @@ def evaluate_ebno(
     while num_frames < max_blocks and frame_errors < target_block_errors:
         current_batch_size = min(batch_size, max_blocks - num_frames)
         batch = generator.generate_batch(current_batch_size)
-        logits = model(
-            batch["Y"],
-            batch["H_hat"],
-            batch["P"],
-            batch["N0"],
-            batch["layer_mask"],
-        )
-        codeword_logits = generator.extract_codeword_logits(logits)
-        info_hat = generator.decode_logits(logits)
+        if receiver_type in {"neural", "neural_perfect"}:
+            channel = (
+                batch["H"]
+                if receiver_type == "neural_perfect"
+                else batch["H_hat"]
+            )
+            logits = model(
+                batch["Y"],
+                channel,
+                batch["P"],
+                batch["N0"],
+                batch["layer_mask"],
+            )
+            codeword_logits = generator.extract_codeword_logits(logits)
+            info_hat = generator.decode_logits(logits)
+        elif receiver_type in {"lmmse_ls", "lmmse_perfect"}:
+            codeword_logits = classical_receiver.codeword_logits(batch)
+            info_hat = generator.decoder(codeword_logits)
+        else:
+            raise ValueError(f"Unknown receiver_type: {receiver_type}")
         info_errors = info_hat.bool() != batch["info_bits"].bool()
         coded_errors = (codeword_logits > 0) != batch["codeword_bits"].bool()
         layer_block_error = info_errors.any(dim=-1)
@@ -134,6 +154,15 @@ def evaluate_ebno(
 def parse_args(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", required=True)
+    parser.add_argument(
+        "--receiver",
+        default="neural",
+        choices=["neural", "neural_perfect", "lmmse_ls", "lmmse_perfect"],
+        help=(
+            "neural uses LS CSI; neural_perfect replaces only H_hat with the "
+            "true channel; LMMSE modes are classical soft-output controls."
+        ),
+    )
     parser.add_argument("--ebno_list", default="-5,-3,-1,0,1,2,3,4,5,6,7,8")
     parser.add_argument("--coderate", type=float, default=0.5)
     parser.add_argument("--decoder_iterations", type=int, default=20)
@@ -211,7 +240,8 @@ def main(argv=None):
     )
     print(
         f"Train profile: {train_profile['name']} | "
-        f"test profile: {eval_profile['name']} | backend: {backend}"
+        f"test profile: {eval_profile['name']} | backend: {backend} | "
+        f"receiver: {args.receiver}"
     )
 
     rows = []
@@ -220,6 +250,7 @@ def main(argv=None):
         eval_seed = args.seed if args.common_random_numbers else args.seed + index * 1000
         result = evaluate_ebno(
             model,
+            args.receiver,
             config,
             eval_profile,
             ldpc_config,
@@ -234,10 +265,14 @@ def main(argv=None):
         ci_low, ci_high = wilson_interval(
             result["block_errors"], result["num_blocks"]
         )
+        is_neural = args.receiver in {"neural", "neural_perfect"}
         common = {
             "ebno_db": ebno_db,
-            "model": checkpoint["model_name"],
-            "train_seed": checkpoint["args"]["seed"],
+            "receiver": args.receiver,
+            "csi": "perfect" if args.receiver.endswith("perfect") else "ls",
+            "model": checkpoint["model_name"] if is_neural else args.receiver,
+            "checkpoint_model": checkpoint["model_name"],
+            "train_seed": checkpoint["args"]["seed"] if is_neural else -1,
             "eval_seed": eval_seed,
             "common_random_numbers": int(args.common_random_numbers),
             "checkpoint": str(Path(args.checkpoint).resolve()),

@@ -22,9 +22,11 @@ from .single_invariant_net import (
     SingleBranchPhaseInvariantReceiver,
     StrictMatchedN0GatedComplexCNN,
 )
-from .classical_receivers import SionnaLMMSEBaseline
+from .classical_receivers import SionnaLMMSEBaseline, SionnaSUMIMOLMMSEBaseline
 from .su_mimo_invariant_net import (
+    CanonicalPhaseInvariantReadout,
     EquivariantLayerInteraction,
+    SUMIMOCanonicalPhaseReceiver,
     SUMIMOPhaseInvariantReceiver,
     SUMIMOPhaseSensitiveReceiver,
 )
@@ -52,7 +54,10 @@ __all__ = [
     "MatchedN0GatedComplexCNN",
     "StrictMatchedN0GatedComplexCNN",
     "SionnaLMMSEBaseline",
+    "SionnaSUMIMOLMMSEBaseline",
     "EquivariantLayerInteraction",
+    "CanonicalPhaseInvariantReadout",
+    "SUMIMOCanonicalPhaseReceiver",
     "SUMIMOPhaseInvariantReceiver",
     "SUMIMOPhaseSensitiveReceiver",
     "SU_MIMO_MODEL_CHOICES",

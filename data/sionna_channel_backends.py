@@ -156,6 +156,76 @@ def load_channel_profile(
     return validate_channel_profile(profile)
 
 
+def filter_channel_profile(
+    profile: dict[str, Any],
+    *,
+    component_ids: list[str] | tuple[str, ...] | None = None,
+    tdl_models: list[str] | tuple[str, ...] | None = None,
+    delay_spread_min_ns: float | None = None,
+    delay_spread_max_ns: float | None = None,
+) -> dict[str, Any]:
+    """Select a reproducible training subset from a validated channel profile.
+
+    TDL model and delay-spread filters intentionally exclude non-TDL components.
+    ``component_ids`` can be used for arbitrary backends.
+    """
+    result = load_channel_profile(profile)
+    selected_ids = None if component_ids is None else set(component_ids)
+    selected_models = None if tdl_models is None else {str(x) for x in tdl_models}
+    if selected_ids is not None and not selected_ids:
+        raise ValueError("component_ids must not be empty when provided")
+    if selected_models is not None and not selected_models:
+        raise ValueError("tdl_models must not be empty when provided")
+    if delay_spread_min_ns is not None and delay_spread_min_ns <= 0.0:
+        raise ValueError("delay_spread_min_ns must be positive")
+    if delay_spread_max_ns is not None and delay_spread_max_ns <= 0.0:
+        raise ValueError("delay_spread_max_ns must be positive")
+    if (
+        delay_spread_min_ns is not None
+        and delay_spread_max_ns is not None
+        and delay_spread_min_ns > delay_spread_max_ns
+    ):
+        raise ValueError("delay_spread_min_ns must not exceed delay_spread_max_ns")
+
+    def keep(component: dict[str, Any]) -> bool:
+        if selected_ids is not None and component["id"] not in selected_ids:
+            return False
+        uses_tdl_filter = (
+            selected_models is not None
+            or delay_spread_min_ns is not None
+            or delay_spread_max_ns is not None
+        )
+        if uses_tdl_filter and component["backend"] != "tdl":
+            return False
+        if selected_models is not None and component["tdl_model"] not in selected_models:
+            return False
+        if delay_spread_min_ns is not None:
+            if float(component["delay_spread_ns"]) < delay_spread_min_ns:
+                return False
+        if delay_spread_max_ns is not None:
+            if float(component["delay_spread_ns"]) > delay_spread_max_ns:
+                return False
+        return True
+
+    result["components"] = [component for component in result["components"] if keep(component)]
+    if not result["components"]:
+        raise ValueError(
+            f"Training scenario filters removed every component from {profile['name']!r}."
+        )
+    if any(
+        value is not None
+        for value in (
+            component_ids,
+            tdl_models,
+            delay_spread_min_ns,
+            delay_spread_max_ns,
+        )
+    ):
+        result["source_profile_name"] = result["name"]
+        result["name"] = f"{result['name']}__filtered"
+    return validate_channel_profile(result)
+
+
 def profile_backend_label(profile: dict[str, Any]) -> str:
     backends = sorted({component["backend"] for component in profile["components"]})
     return backends[0] if len(backends) == 1 else "+".join(backends)

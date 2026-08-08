@@ -2,6 +2,7 @@ from .ofdm_dataset import OFDMDataset
 from .sionna_channel_backends import (
     PROFILE_SCHEMA_VERSION,
     channel_profile_hash,
+    filter_channel_profile,
     legacy_channel_profile,
     load_channel_profile,
     profile_backend_label,
@@ -34,6 +35,7 @@ __all__ = [
     "validate_channel_profile",
     "legacy_channel_profile",
     "channel_profile_hash",
+    "filter_channel_profile",
     "profile_backend_label",
     "profile_component",
 ]

@@ -174,7 +174,8 @@ Run its data, forward/backward, checkpoint, phase, permutation, tiny-overfit,
 training-resume, and BER-export checks with:
 
 ```bash
-python -m unittest tests.test_su_mimo_smoke tests.test_su_mimo_train_eval -v
+python -m unittest tests.test_su_mimo_smoke tests.test_su_mimo_train_eval \
+  tests.test_su_mimo_training_controls -v
 ```
 
 A complete default 2x2 training run is:
@@ -185,10 +186,14 @@ python -m training.train_su_mimo \
   --num_layers 2 --num_rx_ant 2 --total_tx_power 1.0 \
   --train_channel_profile configs/channel_profiles/tdl_mix_normalized.json \
   --val_channel_profile configs/channel_profiles/tdl_mix_normalized.json \
-  --train_phase_mode fixed --val_phase_mode uniform \
+  --train_phase_mode fixed --val_phase_mode fixed \
   --snr_db_min -5 --snr_db_max 20 \
-  --num_train 10000 --num_val 2000 --epochs 50 --batch_size 64 \
-  --seed 0 --save_dir runs/su_mimo_2x2_seed0
+  --num_train 10000 --num_val 2000 --epochs 130 --batch_size 64 \
+  --lr 1e-3 --lr_scheduler cosine --lr_min 1e-5 --warmup_epochs 5 \
+  --constant_tail_epochs 30 \
+  --seed 0 --train_generator_seed 0 --val_generator_seed 100000 \
+  --deterministic_algorithms \
+  --save_dir runs/su_mimo_2x2_warmup_cosine_tail30_seed0
 ```
 
 The default widths (`hidden_complex=32`, `zero_real=22`, `hidden_real=66`)
@@ -197,16 +202,64 @@ give exactly 204,599 trainable parameters, matching the existing
 equal-parameter phase-sensitive control with
 `--model su_mimo_phase_sensitive`. Both models keep layer-permutation
 equivariance; only the final readout's common-phase invariance differs.
+Select `--model su_mimo_phase_canonical` for the third, exactly
+parameter-matched receiver. It learns one phase reference shared across all
+layers and resource elements of each sample, removes only that common phase,
+and exposes the canonicalized complex features directly to the real LLR head.
 
-`best.pt` is selected by minimum validation BCE. `last.pt`, `history.csv`, and
-`resolved_config.json` are also saved. Resume from the full model and AdamW
-state by setting a new total target epoch; data and model settings are restored
-from the checkpoint:
+Train the 16-Rx and 2-Rx canonical receivers with the same deterministic
+130-epoch schedule used by the existing ablation:
+
+```bash
+PYTHON_BIN=/home/ahhy/venvs/sionna-pi/bin/python \
+SEED=0 \
+bash scripts/run_su_mimo_canonical_warmup_cosine.sh
+```
+
+The default schedule uses 5 warmup epochs, cosine decay through epoch 100, and
+a 30-epoch constant tail at `1e-5` for slow-convergence optimization. The
+runtime seed is applied before model construction, and the initialization
+hash is stored for provenance. Validation replays the same generator seed on
+every epoch. `best.pt` is selected by minimum validation BCE. `last.pt`,
+`history.csv`, and `resolved_config.json` are also saved together with the
+optimizer and LR-scheduler state. Resume an interrupted run with the same
+planned total target epoch; data, model, optimizer, and schedule settings are
+restored from the checkpoint:
 
 ```bash
 python -m training.train_su_mimo \
-  --resume_checkpoint runs/su_mimo_2x2_seed0/last.pt \
-  --epochs 100
+  --resume_checkpoint runs/su_mimo_2x2_warmup_cosine_tail30_seed0/last.pt \
+  --epochs 130
+```
+
+For a finite-data sample-efficiency comparison, use
+`--train_dataset_mode fixed`. In this mode `--num_train` is the exact number
+of distinct generated samples, not the number of newly drawn samples per
+epoch. Stable seeded shards reproduce the same finite corpus for both models
+without caching the large 16-Rx tensors. `--train_steps` gives all dataset
+sizes the same optimizer budget and selects the step-based warmup/cosine/tail
+arguments. Training scenarios can be restricted within an existing profile by
+component ID, TDL model, and an inclusive delay-spread range; the SNR range is
+still controlled by `--snr_db_min/--snr_db_max`.
+
+Run the recommended canonical-versus-sensitive matrix (500, 2,000, and
+10,000 distinct examples; three seeds; 20,000 optimizer steps each) with:
+
+```bash
+PYTHON_BIN=/home/ahhy/venvs/sionna-pi/bin/python \
+bash scripts/run_su_mimo_finite_data_matrix.sh
+```
+
+The matrix can be narrowed without editing the script. For example, this runs
+one seed at 2,000 examples using only TDL-A/B and 30--100 ns training channels,
+while validation continues to use the full source profile:
+
+```bash
+TRAIN_SIZES="2000" SEEDS="0" \
+TRAIN_TDL_MODELS="A B" \
+TRAIN_DELAY_SPREAD_MIN_NS=30 TRAIN_DELAY_SPREAD_MAX_NS=100 \
+PYTHON_BIN=/home/ahhy/venvs/sionna-pi/bin/python \
+bash scripts/run_su_mimo_finite_data_matrix.sh
 ```
 
 Evaluate the validation-selected checkpoint with aggregate and per-layer BER,
