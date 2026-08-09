@@ -31,6 +31,103 @@ class SUMIMOTrainEvalCLITest(unittest.TestCase):
     def setUp(self):
         self.repo_root = Path(__file__).resolve().parents[1]
 
+    def test_real_cnn_train_checkpoint_and_bler_eval(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = Path(tmpdir) / "real_cnn"
+            out_csv = Path(tmpdir) / "real_cnn_bler.csv"
+            profile = (
+                self.repo_root
+                / "configs/channel_profiles/tdl_a_10_30_100_mix_normalized.json"
+            )
+            trained = self._run(
+                "-m",
+                "training.train_su_mimo",
+                "--model",
+                "su_mimo_real_cnn",
+                "--num_train",
+                "1",
+                "--num_val",
+                "1",
+                "--epochs",
+                "1",
+                "--batch_size",
+                "1",
+                "--snr_db_min",
+                "8",
+                "--snr_db_max",
+                "8",
+                "--num_ofdm_symbols",
+                "4",
+                "--fft_size",
+                "12",
+                "--dmrs_symbols",
+                "1",
+                "3",
+                "--hidden_complex",
+                "4",
+                "--zero_real",
+                "4",
+                "--hidden_real",
+                "8",
+                "--num_iterations",
+                "1",
+                "--zero_gate_hidden",
+                "4",
+                "--train_channel_profile",
+                str(profile),
+                "--val_channel_profile",
+                str(profile),
+                "--save_dir",
+                str(run_dir),
+                "--device",
+                "cuda",
+                "--seed",
+                "2026",
+                "--log_interval",
+                "0",
+            )
+            self.assertIn("model: su_mimo_real_cnn", trained.stdout)
+            checkpoint = torch.load(
+                run_dir / "best.pt", map_location="cpu", weights_only=True
+            )
+            self.assertEqual(checkpoint["model_name"], "su_mimo_real_cnn")
+            self.assertGreater(
+                checkpoint["resolved_model_config"]["real_hidden_channels"], 0
+            )
+            self.assertGreater(
+                checkpoint["resolved_model_config"]["real_readout_channels"], 0
+            )
+
+            evaluated = self._run(
+                "-m",
+                "evaluation.eval_bler_su_mimo",
+                "--checkpoint",
+                str(run_dir / "best.pt"),
+                "--ebno_list",
+                "8",
+                "--coderate",
+                "0.5",
+                "--decoder_iterations",
+                "2",
+                "--batch_size",
+                "1",
+                "--target_block_errors",
+                "1",
+                "--max_blocks",
+                "1",
+                "--eval_channel_profile",
+                str(profile),
+                "--eval_component_id",
+                "tdl_A_10ns",
+                "--out_csv",
+                str(out_csv),
+            )
+            self.assertIn("receiver: neural", evaluated.stdout)
+            with out_csv.open(newline="") as stream:
+                rows = list(csv.DictReader(stream))
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["model"], "su_mimo_real_cnn")
+
     def test_fixed_finite_dataset_step_budget_and_scenario_filter(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             run_dir = Path(tmpdir) / "finite"

@@ -825,6 +825,7 @@ def main(argv=None):
     resolved = {
         "model_name": args.model,
         "model_config": model_config,
+        "resolved_model_config": getattr(model, "resolved_model_config", {}),
         "data_backend": "sionna_su_mimo",
         "sionna_su_mimo_config": data_config.to_dict(),
         "args": vars(args),

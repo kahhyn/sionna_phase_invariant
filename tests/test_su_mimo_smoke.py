@@ -15,6 +15,7 @@ from models import (
     SUMIMOCanonicalPhaseReceiver,
     SUMIMOPhaseInvariantReceiver,
     SUMIMOPhaseSensitiveReceiver,
+    SUMIMORealCNNReceiver,
     build_su_mimo_model,
 )
 from utils.metrics import masked_bce_with_logits
@@ -60,6 +61,21 @@ class SUMIMOSmokeTest(unittest.TestCase):
             bits_per_symbol=2,
             num_iterations=1,
             zero_gate_hidden=4,
+        ).to(self.device)
+
+    def _build_real_model(self):
+        return build_su_mimo_model(
+            "su_mimo_real_cnn",
+            {
+                "num_rx_ant": 2,
+                "hidden_complex": 4,
+                "zero_real": 4,
+                "hidden_real": 8,
+                "bits_per_symbol": 2,
+                "num_iterations": 1,
+                "kernel_size": 3,
+                "zero_gate_hidden": 4,
+            },
         ).to(self.device)
 
     def test_batch_shapes_fdm_and_total_power(self):
@@ -126,6 +142,63 @@ class SUMIMOSmokeTest(unittest.TestCase):
             checkpoint = Path(tmpdir) / "su_mimo_smoke.pt"
             torch.save(model.state_dict(), checkpoint)
             restored = self._build_model().eval()
+            restored.load_state_dict(torch.load(checkpoint, weights_only=True))
+            with torch.no_grad():
+                reloaded = restored(
+                    batch["Y"],
+                    batch["H_hat"],
+                    batch["P"],
+                    batch["N0"],
+                    batch["layer_mask"],
+                )
+        torch.testing.assert_close(reference, reloaded)
+
+    def test_real_cnn_forward_backward_checkpoint_and_layer_permutation(self):
+        batch = self.batch
+        model = self._build_real_model().train()
+        logits = model(
+            batch["Y"],
+            batch["H_hat"],
+            batch["P"],
+            batch["N0"],
+            batch["layer_mask"],
+        )
+        self.assertEqual(logits.shape, batch["bits"].shape)
+        loss = masked_bce_with_logits(logits, batch["bits"], batch["loss_mask"])
+        self.assertTrue(torch.isfinite(loss))
+        loss.backward()
+        gradients = [p.grad for p in model.parameters() if p.grad is not None]
+        self.assertTrue(gradients)
+        self.assertTrue(all(torch.isfinite(grad).all() for grad in gradients))
+
+        model.eval()
+        permutation = torch.tensor([1, 0], device=self.device)
+        with torch.no_grad():
+            reference = model(
+                batch["Y"],
+                batch["H_hat"],
+                batch["P"],
+                batch["N0"],
+                batch["layer_mask"],
+            )
+            permuted = model(
+                batch["Y"],
+                batch["H_hat"].index_select(1, permutation),
+                batch["P"].index_select(1, permutation),
+                batch["N0"],
+                batch["layer_mask"].index_select(1, permutation),
+            )
+        torch.testing.assert_close(
+            permuted,
+            reference.index_select(1, permutation),
+            atol=3e-5,
+            rtol=3e-5,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            checkpoint = Path(tmpdir) / "su_mimo_real_smoke.pt"
+            torch.save(model.state_dict(), checkpoint)
+            restored = self._build_real_model().eval()
             restored.load_state_dict(torch.load(checkpoint, weights_only=True))
             with torch.no_grad():
                 reloaded = restored(
@@ -237,15 +310,26 @@ class SUMIMOSmokeTest(unittest.TestCase):
             sensitive = build_su_mimo_model(
                 "su_mimo_phase_sensitive", model_config
             )
+            real_cnn = build_su_mimo_model("su_mimo_real_cnn", model_config)
             self.assertIsInstance(invariant, SUMIMOPhaseInvariantReceiver)
             self.assertIsInstance(canonical, SUMIMOCanonicalPhaseReceiver)
             self.assertIsInstance(sensitive, SUMIMOPhaseSensitiveReceiver)
+            self.assertIsInstance(real_cnn, SUMIMORealCNNReceiver)
             counts = {
                 sum(p.numel() for p in invariant.parameters()),
                 sum(p.numel() for p in canonical.parameters()),
                 sum(p.numel() for p in sensitive.parameters()),
             }
             self.assertEqual(counts, {expected_parameters})
+            real_parameters = sum(p.numel() for p in real_cnn.parameters())
+            self.assertLessEqual(
+                abs(real_parameters - expected_parameters),
+                max(100, round(0.001 * expected_parameters)),
+            )
+            self.assertEqual(
+                real_cnn.resolved_model_config["predicted_parameter_count"],
+                real_parameters,
+            )
 
     def test_phase_sensitive_control_is_not_invariant(self):
         batch = self.batch
@@ -388,6 +472,7 @@ class SUMIMOSmokeTest(unittest.TestCase):
         for label, builder in (
             ("hermitian", self._build_model),
             ("canonical", self._build_canonical_model),
+            ("real_cnn", self._build_real_model),
         ):
             with self.subTest(model=label):
                 torch.manual_seed(1357)

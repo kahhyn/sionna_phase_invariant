@@ -30,6 +30,10 @@ from .su_mimo_invariant_net import (
     SUMIMOPhaseInvariantReceiver,
     SUMIMOPhaseSensitiveReceiver,
 )
+from .su_mimo_real_cnn import (
+    RealEquivariantLayerInteraction,
+    SUMIMORealCNNReceiver,
+)
 from .su_mimo_factory import SU_MIMO_MODEL_CHOICES, build_su_mimo_model
 from .factory import MODEL_CHOICES, build_model, build_model_from_args
 
@@ -60,6 +64,8 @@ __all__ = [
     "SUMIMOCanonicalPhaseReceiver",
     "SUMIMOPhaseInvariantReceiver",
     "SUMIMOPhaseSensitiveReceiver",
+    "RealEquivariantLayerInteraction",
+    "SUMIMORealCNNReceiver",
     "SU_MIMO_MODEL_CHOICES",
     "build_su_mimo_model",
     "MODEL_CHOICES",
