@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "name": "tdl_A_10ns_normalized",
+  "sampling": "balanced_batch",
+  "components": [
+    {
+      "id": "tdl_A_10ns",
+      "backend": "tdl",
+      "weight": 1.0,
+      "tdl_model": "A",
+      "delay_spread_ns": 10,
+      "max_doppler_hz": 200,
+      "normalize_channel": true
+    }
+  ]
+}
