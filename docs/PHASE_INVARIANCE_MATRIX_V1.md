@@ -32,20 +32,28 @@ The exact scientific contract is
 
 ## Checkpoint readiness
 
-For seed 0, eight of twelve required checkpoints are already available:
+For seed 0, four of twelve formal checkpoints are already available:
 
-- all four SISO checkpoints (two models × two source domains);
 - all four TDL-mix SU-MIMO checkpoints (two models × 2Rx/16Rx).
 
-The runner must train four TDL-A SU-MIMO checkpoints:
+The existing SISO checkpoints remain tracked historical evidence, but their
+`best.pt` files were selected on uniform-phase validation. Because uniform
+phase is a target OOD condition in this contract, reusing them would leak the
+target shift into checkpoint selection. The runner therefore trains four new
+fixed-train/fixed-validation SISO checkpoints:
+
+- invariant and sensitive on TDL-A/10 ns;
+- invariant and sensitive on TDL mix.
+
+It also trains four TDL-A SU-MIMO checkpoints:
 
 - canonical 2Rx;
 - sensitive 2Rx;
 - canonical 16Rx;
 - sensitive 16Rx.
 
-`MODE=all` trains only missing checkpoints and then evaluates the selected
-matrix. Existing tracked checkpoints are never overwritten.
+`MODE=all` trains these eight missing formal checkpoints and then evaluates the
+selected matrix. Existing tracked checkpoints are never overwritten.
 
 ## QuaDRiGa MAT contract
 

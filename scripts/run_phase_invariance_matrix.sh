@@ -34,6 +34,7 @@ args=(
   --decoder_iterations "${DECODER_ITERATIONS:-20}"
   --eval_batch_size "${EVAL_BATCH_SIZE:-16}"
   --epochs "${EPOCHS:-130}"
+  --siso_epochs "${SISO_EPOCHS:-50}"
   --num_train "${NUM_TRAIN:-10000}"
   --num_val "${NUM_VAL:-2000}"
   --train_batch_size "${TRAIN_BATCH_SIZE:-64}"

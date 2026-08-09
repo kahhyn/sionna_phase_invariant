@@ -51,16 +51,24 @@
     "validation_phase_mode": "fixed",
     "samples_per_epoch": 10000,
     "validation_samples": 2000,
-    "epochs": 130,
     "batch_size": 64,
     "snr_db_min": -5,
     "snr_db_max": 20,
-    "optimizer": "AdamW",
-    "base_lr": 0.001,
-    "scheduler": "cosine",
-    "lr_min": 0.00001,
-    "warmup_epochs": 5,
-    "constant_tail_epochs": 30,
+    "siso": {
+      "epochs": 50,
+      "optimizer": "Adam",
+      "base_lr": 0.001,
+      "scheduler": "constant"
+    },
+    "su_mimo": {
+      "epochs": 130,
+      "optimizer": "AdamW",
+      "base_lr": 0.001,
+      "scheduler": "cosine",
+      "lr_min": 0.00001,
+      "warmup_epochs": 5,
+      "constant_tail_epochs": 30
+    },
     "selection_rule": "minimum source-validation BCE"
   },
   "evaluation": {

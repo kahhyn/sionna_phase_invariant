@@ -2,7 +2,7 @@
 
 This directory contains the already-trained SU-MIMO checkpoints required by
 `configs/experiment_matrices/phase_invariance_siso_mimo_v1.json`. Existing SISO
-checkpoints are referenced in place to avoid binary duplication:
+checkpoints remain available as historical evidence:
 
 - narrow TDL-A/10 ns: `checkpoints/continual_source/`;
 - broad TDL mix: `checkpoints/generalization/tdl_mix_normalized/`.
@@ -20,7 +20,11 @@ the declared model/readout differs.
 | `su_mimo_phase_canonical_rx16_seed0.pt` | 220,755 | 127 | `runs/su_mimo_tdl_mix_phase_canonical_tail30_seed0/rx16_phase_canonical/best.pt` |
 | `su_mimo_phase_sensitive_rx16_seed0.pt` | 220,755 | 129 | `runs/su_mimo_tdl_mix_rx_ablation_warmup_cosine_tail30_seed0/rx16_phase_sensitive/best.pt` |
 
-The matrix still needs four TDL-A/10 ns SU-MIMO networks per requested seed:
+Those SISO `best.pt` files were selected on uniform-phase validation and are not
+used by the formal matrix, where uniform phase is a target OOD condition. The
+matrix runner trains four new fixed-validation SISO checkpoints per seed.
+
+The matrix also needs four TDL-A/10 ns SU-MIMO networks per requested seed:
 canonical/sensitive at 2Rx and 16Rx. The matrix runner trains these missing
 networks automatically in `--mode all` or `--mode train`.
 

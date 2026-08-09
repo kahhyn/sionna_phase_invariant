@@ -84,15 +84,11 @@ def abs_repo(path: Path) -> Path:
 
 
 def tracked_checkpoint(system: str, train_domain: str, method: Method, seed: int) -> Path | None:
+    # Existing SISO best.pt files were selected on uniform-phase validation.
+    # Uniform phase is a target OOD condition in this contract, so those
+    # checkpoints remain historical evidence and are deliberately not reused.
     if system == "siso_1l1rx":
-        if train_domain == "tdl_a":
-            return Path(
-                f"checkpoints/continual_source/{method.model_name}_seed{seed}.pt"
-            )
-        return Path(
-            "checkpoints/generalization/tdl_mix_normalized/"
-            f"{method.model_name}_seed{seed}.pt"
-        )
+        return None
     if train_domain == "tdl_mix" and seed == 0:
         rx = 2 if system == "mimo_2l2rx" else 16
         return Path(
@@ -190,6 +186,70 @@ def build_mimo_train_command(args, system: str, train_domain: str, method: Metho
         "--val_generator_seed",
         str(seed + 100000),
         "--deterministic_algorithms",
+        "--device",
+        args.device,
+        "--save_dir",
+        str(save_dir),
+    ]
+
+
+def build_siso_train_command(args, train_domain: str, method: Method, seed: int) -> list[str]:
+    save_dir = trained_checkpoint(
+        args, "siso_1l1rx", train_domain, method, seed
+    ).parent
+    profile = TRAIN_PROFILES[train_domain]
+    return [
+        args.python,
+        "-m",
+        "training.train_sionna",
+        "--model",
+        method.model_name,
+        "--train_channel_profile",
+        str(profile),
+        "--val_channel_profile",
+        str(profile),
+        "--train_phase_mode",
+        "fixed",
+        "--val_phase_mode",
+        "fixed",
+        "--snr_db_min",
+        "-5",
+        "--snr_db_max",
+        "20",
+        "--num_train",
+        str(args.num_train),
+        "--num_val",
+        str(args.num_val),
+        "--epochs",
+        str(args.siso_epochs),
+        "--batch_size",
+        str(args.train_batch_size),
+        "--hidden",
+        "64",
+        "--hidden_complex",
+        "32",
+        "--zero_complex",
+        "32",
+        "--branch_layers",
+        "2",
+        "--kernel_size",
+        "3",
+        "--gate_type",
+        "swiglu",
+        "--single_readout_mode",
+        "low_rank",
+        "--zero_gate_hidden",
+        "16",
+        "--lr",
+        "1e-3",
+        "--weight_decay",
+        "0",
+        "--seed",
+        str(seed),
+        "--train_generator_seed",
+        str(seed),
+        "--val_generator_seed",
+        str(seed + 100000),
         "--device",
         args.device,
         "--save_dir",
@@ -342,7 +402,7 @@ def audit_checkpoints(args) -> list[dict]:
                             "checkpoint": str(path),
                             "exists": path.exists(),
                             "needs_training": not path.exists(),
-                            "trainable_by_runner": system != "siso_1l1rx",
+                            "trainable_by_runner": True,
                         }
                     )
     return rows
@@ -352,21 +412,20 @@ def train_missing(args, records: list[dict]) -> None:
     for row in audit_checkpoints(args):
         if not row["needs_training"]:
             continue
-        if not row["trainable_by_runner"]:
-            raise FileNotFoundError(
-                f"Missing curated SISO checkpoint: {row['checkpoint']}"
+        methods = selected_methods(row["system"])
+        method = next(method for method in methods if method.key == row["method"])
+        command = (
+            build_siso_train_command(
+                args, row["train_domain"], method, row["seed"]
             )
-        method = next(
-            method
-            for method in MIMO_METHODS
-            if method.key == row["method"]
-        )
-        command = build_mimo_train_command(
-            args,
-            row["system"],
-            row["train_domain"],
-            method,
-            row["seed"],
+            if row["system"] == "siso_1l1rx"
+            else build_mimo_train_command(
+                args,
+                row["system"],
+                row["train_domain"],
+                method,
+                row["seed"],
+            )
         )
         checkpoint = Path(row["checkpoint"])
         execute_command(
@@ -615,6 +674,7 @@ def parse_args(argv=None):
     parser.add_argument("--decoder_iterations", type=int, default=20)
     parser.add_argument("--eval_batch_size", type=int, default=16)
     parser.add_argument("--epochs", type=int, default=130)
+    parser.add_argument("--siso_epochs", type=int, default=50)
     parser.add_argument("--num_train", type=int, default=10000)
     parser.add_argument("--num_val", type=int, default=2000)
     parser.add_argument("--train_batch_size", type=int, default=64)

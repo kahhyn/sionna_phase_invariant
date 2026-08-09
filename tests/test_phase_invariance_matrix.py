@@ -11,7 +11,7 @@ from experiments import phase_invariance_matrix as matrix
 
 
 class PhaseInvarianceMatrixTests(unittest.TestCase):
-    def test_seed0_checkpoint_audit_identifies_only_narrow_mimo_as_missing(self):
+    def test_seed0_checkpoint_audit_excludes_uniform_val_siso_checkpoints(self):
         with tempfile.TemporaryDirectory() as directory:
             args = matrix.parse_args(
                 [
@@ -26,12 +26,12 @@ class PhaseInvarianceMatrixTests(unittest.TestCase):
             rows = matrix.audit_checkpoints(args)
         self.assertEqual(len(rows), 12)
         missing = [row for row in rows if not row["exists"]]
-        self.assertEqual(len(missing), 4)
-        self.assertEqual({row["train_domain"] for row in missing}, {"tdl_a"})
-        self.assertEqual(
-            {row["system"] for row in missing},
-            {"mimo_2l2rx", "mimo_2l16rx"},
-        )
+        self.assertEqual(len(missing), 8)
+        siso_missing = [row for row in missing if row["system"] == "siso_1l1rx"]
+        self.assertEqual(len(siso_missing), 4)
+        mimo_missing = [row for row in missing if row["system"] != "siso_1l1rx"]
+        self.assertEqual(len(mimo_missing), 4)
+        self.assertEqual({row["train_domain"] for row in mimo_missing}, {"tdl_a"})
 
     def test_doppler_domain_expands_to_four_fixed_components(self):
         variants = matrix.test_variants("tdl_a", "doppler_ood")
