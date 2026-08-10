@@ -54,13 +54,20 @@ class ComplexResidualBlock(nn.Module):
     is preserved.
     """
 
-    def __init__(self, channels, kernel_size=3, use_norm=True,gate_type="swiglu"):
+    def __init__(
+        self,
+        channels,
+        kernel_size=3,
+        use_norm=True,
+        gate_type="swiglu",
+        conv_cls=ComplexConv2d,
+    ):
         super().__init__()
         padding = kernel_size // 2
         if gate_type not in ["sigmoid", "swiglu"]:
             raise ValueError("gate_type must be 'sigmoid' or 'swiglu'.")
 
-        self.conv1 = ComplexConv2d(
+        self.conv1 = conv_cls(
             channels,
             channels,
             kernel_size=kernel_size,
@@ -72,7 +79,7 @@ class ComplexResidualBlock(nn.Module):
         else:
             self.gate1 = AmplitudeSwiGLUGate(channels)
 
-        self.conv2 = ComplexConv2d(
+        self.conv2 = conv_cls(
             channels,
             channels,
             kernel_size=kernel_size,

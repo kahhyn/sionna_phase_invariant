@@ -30,16 +30,21 @@ def _prepare_n0_grid(n0, batch_size, num_symbols, num_subcarriers, device):
 
 
 class EquivariantLayerInteraction(nn.Module):
-    """Masked DeepSets interaction preserving charge one and layer order."""
+    """Masked DeepSets interaction preserving layer permutations.
 
-    def __init__(self, channels):
+    The default complex-linear convolution also preserves charge one.  A
+    widely-linear convolution intentionally relaxes that phase constraint
+    while retaining the same layer-permutation topology.
+    """
+
+    def __init__(self, channels, conv_cls=ComplexConv2d):
         super().__init__()
-        self.message_proj = ComplexConv2d(
+        self.message_proj = conv_cls(
             channels, channels, kernel_size=1, padding=0, bias=False
         )
         self.message_norm = ComplexRMSNorm2d(channels)
         self.message_gate = AmplitudeSwiGLUGate(channels)
-        self.update_proj = ComplexConv2d(
+        self.update_proj = conv_cls(
             2 * channels, channels, kernel_size=1, padding=0, bias=False
         )
         self.update_norm = ComplexRMSNorm2d(channels)
@@ -92,12 +97,12 @@ class EquivariantLayerInteraction(nn.Module):
 class EquivariantComplexReadout(nn.Module):
     """Parameter-matched phase-sensitive counterpart to Hermitian readout."""
 
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, conv_cls=ComplexConv2d):
         super().__init__()
-        self.proj_a = ComplexConv2d(
+        self.proj_a = conv_cls(
             in_channels, out_channels, kernel_size=3, padding=1, bias=False
         )
-        self.proj_b = ComplexConv2d(
+        self.proj_b = conv_cls(
             in_channels, out_channels, kernel_size=3, padding=1, bias=False
         )
         self.norm_proj_a = ComplexRMSNorm2d(out_channels)
@@ -206,6 +211,7 @@ class SUMIMOPhaseInvariantReceiver(nn.Module):
         zero_gate_hidden=16,
         phase_invariant_readout=True,
         canonical_phase_readout=False,
+        complex_conv_cls=ComplexConv2d,
     ):
         super().__init__()
         if num_rx_ant <= 0 or num_iterations <= 0:
@@ -220,7 +226,7 @@ class SUMIMOPhaseInvariantReceiver(nn.Module):
             )
         self.input_scale = nn.Parameter(torch.ones(2 * self.num_rx_ant))
 
-        self.input_proj = ComplexConv2d(
+        self.input_proj = complex_conv_cls(
             2 * self.num_rx_ant,
             hidden_complex,
             kernel_size=kernel_size,
@@ -240,13 +246,16 @@ class SUMIMOPhaseInvariantReceiver(nn.Module):
                     kernel_size=kernel_size,
                     use_norm=True,
                     gate_type="swiglu",
+                    conv_cls=complex_conv_cls,
                 )
                 for _ in range(num_iterations)
             ]
         )
         self.interactions = nn.ModuleList(
             [
-                EquivariantLayerInteraction(hidden_complex)
+                EquivariantLayerInteraction(
+                    hidden_complex, conv_cls=complex_conv_cls
+                )
                 for _ in range(num_iterations)
             ]
         )
@@ -274,6 +283,7 @@ class SUMIMOPhaseInvariantReceiver(nn.Module):
             self.readout = EquivariantComplexReadout(
                 in_channels=hidden_complex,
                 out_channels=zero_real,
+                conv_cls=complex_conv_cls,
             )
         readout_channels = 2 * zero_real
         self.readout_mix = nn.Conv2d(

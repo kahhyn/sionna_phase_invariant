@@ -16,6 +16,7 @@ from models import (
     SUMIMOPhaseInvariantReceiver,
     SUMIMOPhaseSensitiveReceiver,
     SUMIMORealCNNReceiver,
+    SUMIMOWidelyLinearReceiver,
     build_su_mimo_model,
 )
 from utils.metrics import masked_bce_with_logits
@@ -311,10 +312,16 @@ class SUMIMOSmokeTest(unittest.TestCase):
                 "su_mimo_phase_sensitive", model_config
             )
             real_cnn = build_su_mimo_model("su_mimo_real_cnn", model_config)
+            widely_linear = build_su_mimo_model(
+                "su_mimo_widely_linear", model_config
+            )
             self.assertIsInstance(invariant, SUMIMOPhaseInvariantReceiver)
             self.assertIsInstance(canonical, SUMIMOCanonicalPhaseReceiver)
             self.assertIsInstance(sensitive, SUMIMOPhaseSensitiveReceiver)
             self.assertIsInstance(real_cnn, SUMIMORealCNNReceiver)
+            self.assertIsInstance(
+                widely_linear, SUMIMOWidelyLinearReceiver
+            )
             counts = {
                 sum(p.numel() for p in invariant.parameters()),
                 sum(p.numel() for p in canonical.parameters()),
@@ -322,6 +329,9 @@ class SUMIMOSmokeTest(unittest.TestCase):
             }
             self.assertEqual(counts, {expected_parameters})
             real_parameters = sum(p.numel() for p in real_cnn.parameters())
+            widely_linear_parameters = sum(
+                p.numel() for p in widely_linear.parameters()
+            )
             self.assertLessEqual(
                 abs(real_parameters - expected_parameters),
                 max(100, round(0.001 * expected_parameters)),
@@ -329,6 +339,16 @@ class SUMIMOSmokeTest(unittest.TestCase):
             self.assertEqual(
                 real_cnn.resolved_model_config["predicted_parameter_count"],
                 real_parameters,
+            )
+            self.assertLessEqual(
+                abs(widely_linear_parameters - expected_parameters),
+                max(100, round(0.001 * expected_parameters)),
+            )
+            self.assertEqual(
+                widely_linear.resolved_model_config[
+                    "predicted_parameter_count"
+                ],
+                widely_linear_parameters,
             )
 
     def test_phase_sensitive_control_is_not_invariant(self):

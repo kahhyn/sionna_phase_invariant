@@ -34,6 +34,7 @@ from .su_mimo_real_cnn import (
     RealEquivariantLayerInteraction,
     SUMIMORealCNNReceiver,
 )
+from .su_mimo_widely_linear_cnn import SUMIMOWidelyLinearReceiver
 from .su_mimo_factory import SU_MIMO_MODEL_CHOICES, build_su_mimo_model
 from .factory import MODEL_CHOICES, build_model, build_model_from_args
 
@@ -66,6 +67,7 @@ __all__ = [
     "SUMIMOPhaseSensitiveReceiver",
     "RealEquivariantLayerInteraction",
     "SUMIMORealCNNReceiver",
+    "SUMIMOWidelyLinearReceiver",
     "SU_MIMO_MODEL_CHOICES",
     "build_su_mimo_model",
     "MODEL_CHOICES",
