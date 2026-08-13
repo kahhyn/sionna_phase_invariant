@@ -1,0 +1,40 @@
+{
+  "frontends": [
+    "identity",
+    "mf",
+    "tgamma",
+    "lmmse"
+  ],
+  "checkpoint_dir": "tests/representation_invariance/runs_regularized_frontends",
+  "checkpoint_seed": 42,
+  "output_dir": null,
+  "snr_list": "-10,-9,-8,-7,-6,-5,-4,-3,-2,-1,0,1,2,3,4,5",
+  "snr_min": -5.0,
+  "snr_max": 20.0,
+  "snr_step": 0.5,
+  "num_test": 4096,
+  "batch_size": 64,
+  "target_bit_errors": 0,
+  "max_test": 100000,
+  "eval_seed": 777042,
+  "device": "cuda",
+  "allow_missing": false,
+  "snr_points": [
+    -10.0,
+    -9.0,
+    -8.0,
+    -7.0,
+    -6.0,
+    -5.0,
+    -4.0,
+    -3.0,
+    -2.0,
+    -1.0,
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0
+  ]
+}

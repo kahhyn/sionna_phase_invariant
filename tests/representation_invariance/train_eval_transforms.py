@@ -1,9 +1,9 @@
-"""Train and evaluate the SU-MIMO real CNN with different unitary input representations.
+"""Train and evaluate the SU-MIMO real CNN with unified linear frontends.
 
-For each transform (identity, haar, qr, svd, polar), the receiver Y and
-estimated channel H_hat are rotated by a unitary W^H before being fed into
-the network.  All transforms preserve mutual information, so performance
-differences reveal sensitivity to the chosen linear basis.
+The default comparison contains identity, QR, SVD, Polar, MF, T_gamma, and
+LMMSE. Haar is intentionally excluded because it is not channel-adaptive.
+All methods use the same linear LS interpolation, model initialization,
+training random seed, and evaluation random realizations.
 
 Training uses the existing Sionna SU-MIMO pipeline (TDL-A, 4×4 MIMO, 14-symbol
 72-subcarrier OFDM, DMRS at symbols 2 and 11, LS interpolation).
@@ -16,17 +16,18 @@ or::
 
     PYTHONPATH=. python tests/representation_invariance/train_eval_transforms.py
 
-Outputs are written to ``tests/representation_invariance/runs/``.
+Outputs are written to ``tests/representation_invariance/runs_unified_lin/``.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import json
 import math
 import sys
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
 
 # Ensure the project root is on sys.path so that direct invocation works.
 _project_root = Path(__file__).resolve().parents[2]
@@ -56,6 +57,16 @@ matplotlib.use("Agg")
 
 def _hermitian(x: torch.Tensor) -> torch.Tensor:
     return x.conj().transpose(-2, -1)
+
+
+def _frame_values(value, batch_size: int, device: torch.device) -> torch.Tensor:
+    """Convert a scalar or [B,...] quantity to one float per OFDM frame."""
+    tensor = torch.as_tensor(value, device=device, dtype=torch.float32)
+    if tensor.numel() == 1:
+        return tensor.reshape(1).expand(batch_size)
+    if tensor.shape[0] != batch_size:
+        raise ValueError(f"Cannot map shape {tuple(tensor.shape)} to B={batch_size}.")
+    return tensor.reshape(batch_size, -1)[:, 0]
 
 
 # ---------------------------------------------------------------------------
@@ -94,15 +105,15 @@ def apply_representation(
     h_hat: torch.Tensor,
     y: torch.Tensor,
     transform: str,
-    haar: Optional[torch.Tensor] = None,
+    gamma: Optional[torch.Tensor] = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Return ``(z, h_seen, W)`` where ``z = W^H @ y``.
 
     Args:
         h_hat: ``[B, Nr, Nt]`` -- channel estimate.
         y:     ``[B, Nr]``     -- received signal.
-        transform: one of ``identity, haar, qr, svd, polar``.
-        haar:  pre-generated Haar unitary ``[Nr, Nr]`` (required for ``haar``).
+        transform: one of ``identity, qr, svd, polar, mf, tgamma, lmmse``.
+        gamma: ``[B]`` regularization for ``tgamma`` and ``lmmse``.
 
     Returns:
         z:      ``[B, N_out]``   -- transformed received signal.
@@ -117,19 +128,6 @@ def apply_representation(
             .expand(batch_size, -1, -1)
         )
         return y, h_hat, w
-
-    if transform == "haar":
-        if haar is None:
-            raise ValueError("haar transform requires a pre-generated Haar matrix.")
-        # Accept [Nr, Nr] or [B, Nr, Nr].
-        w = haar.to(dtype=h_hat.dtype, device=h_hat.device)
-        if w.dim() == 2:
-            w = w.unsqueeze(0).expand(batch_size, -1, -1)
-        elif w.shape[0] != batch_size:
-            raise ValueError(f"Haar batch size {w.shape[0]} != {batch_size}.")
-        z = (_hermitian(w) @ y.unsqueeze(-1)).squeeze(-1)
-        h_seen = _hermitian(w) @ h_hat
-        return z, h_seen, w
 
     if transform == "qr":
         q, r = torch.linalg.qr(h_hat, mode="reduced")  # Q: [B,Nr,Nt], R: [B,Nt,Nt]
@@ -147,25 +145,34 @@ def apply_representation(
         z = (_hermitian(u_p) @ y.unsqueeze(-1)).squeeze(-1)
         return z, p, u_p
 
+    if transform == "mf":
+        # 匹配滤波：T=H_hat^H。返回 W=T^H，以保持 z=W^H y 的统一语义。
+        t_matrix = _hermitian(h_hat)
+        z = (t_matrix @ y.unsqueeze(-1)).squeeze(-1)
+        h_seen = t_matrix @ h_hat
+        return z, h_seen, _hermitian(t_matrix)
+
+    if transform in ("tgamma", "lmmse"):
+        if gamma is None:
+            raise ValueError(f"{transform} requires gamma.")
+        gamma = gamma.to(device=h_hat.device, dtype=h_hat.real.dtype).reshape(batch_size)
+        if bool(torch.any(gamma <= 0)):
+            raise ValueError("gamma must be strictly positive.")
+
+        # SVD稳定实现：H=U diag(s) V^H。
+        u, singular_values, vh = torch.linalg.svd(h_hat, full_matrices=False)
+        v = _hermitian(vh)
+        s2 = singular_values.square()
+        if transform == "tgamma":
+            weights = singular_values / torch.sqrt(s2 + gamma[:, None])
+        else:
+            weights = singular_values / (s2 + gamma[:, None])
+        t_matrix = (v * weights.unsqueeze(-2)) @ _hermitian(u)
+        z = (t_matrix @ y.unsqueeze(-1)).squeeze(-1)
+        h_seen = t_matrix @ h_hat
+        return z, h_seen, _hermitian(t_matrix)
+
     raise ValueError(f"Unknown transform: {transform}")
-
-
-# ---------------------------------------------------------------------------
-# Haar random unitary generation
-# ---------------------------------------------------------------------------
-
-
-def generate_haar(batch_size: int, n: int, device: torch.device) -> torch.Tensor:
-    """Sample Haar-distributed random unitary matrices.
-
-    Uses the QR decomposition of a complex standard Gaussian matrix.
-    Returns ``[B, n, n]``.
-    """
-    a = torch.randn(batch_size, n, n, dtype=torch.float32, device=device) + 1j * torch.randn(
-        batch_size, n, n, dtype=torch.float32, device=device
-    )
-    q, _ = torch.linalg.qr(a)
-    return q  # [B, n, n]
 
 
 # ---------------------------------------------------------------------------
@@ -174,20 +181,26 @@ def generate_haar(batch_size: int, n: int, device: torch.device) -> torch.Tensor
 
 
 class TransformGeneratorWrapper:
-    """Wraps a :class:`SionnaSUMIMOBatchGenerator` and applies a unitary
-    representation transform to ``Y`` and ``H_hat`` before returning the batch.
-    """
+    """Apply the selected linear frontend to ``Y`` and ``H_hat``."""
 
     def __init__(
         self,
         base_generator: SionnaSUMIMOBatchGenerator,
         transform: str,
-        haar_seed: int = 12345,
+        gamma_scale: float = 1.0,
+        n0_mode: str = "original",
     ):
         self._gen = base_generator
         self._transform = transform
-        self._haar_rng = torch.Generator(device="cpu")
-        self._haar_rng.manual_seed(haar_seed)
+        if gamma_scale <= 0:
+            raise ValueError("gamma_scale must be positive.")
+        if n0_mode not in ("original", "mean_effective"):
+            raise ValueError("n0_mode must be original or mean_effective.")
+        self._gamma_scale = float(gamma_scale)
+        self._n0_mode = n0_mode
+        self._diag_frames = 0
+        self._diag_gamma_sum = 0.0
+        self._diag_noise_gain_sum = 0.0
 
         cfg = base_generator.config
         self._nt = cfg.num_layers
@@ -207,9 +220,20 @@ class TransformGeneratorWrapper:
 
     def reset(self, seed: int | None = None) -> None:
         self._gen.reset(seed)
+        self._diag_frames = 0
+        self._diag_gamma_sum = 0.0
+        self._diag_noise_gain_sum = 0.0
 
     def reset_profile_sampler(self, seed: int | None = None) -> None:
         self._gen.reset_profile_sampler(seed)
+
+    @property
+    def diagnostic_means(self) -> dict[str, float]:
+        count = max(self._diag_frames, 1)
+        return {
+            "mean_gamma": self._diag_gamma_sum / count,
+            "mean_noise_gain": self._diag_noise_gain_sum / count,
+        }
 
     # -- core --------------------------------------------------------------------
     @torch.no_grad()
@@ -228,16 +252,18 @@ class TransformGeneratorWrapper:
 
         n_total = b * t * f
 
-        # Pre-generate Haar matrices if needed (per subcarrier).
-        if self._transform == "haar":
-            # One random unitary per (batch, symbol, subcarrier)
-            haar_batch = generate_haar(n_total, nr, self._device)
-        else:
-            haar_batch = None
+        # gamma=N0/Es；4层且总功率为1时，默认 gamma=4*N0。
+        n0_frame = _frame_values(batch["N0"], b, y.device)
+        es_frame = _frame_values(batch["power_per_data_layer"], b, y.device)
+        gamma_frame = self._gamma_scale * n0_frame / es_frame.clamp_min(1e-12)
+        gamma_flat = gamma_frame[:, None, None].expand(b, t, f).reshape(n_total)
 
-        z_flat, h_seen_flat, _ = apply_representation(
-            h_flat, y_flat, self._transform, haar_batch
+        z_flat, h_seen_flat, w_flat = apply_representation(
+            h_flat, y_flat, self._transform, gamma_flat
         )
+
+        # W的列对应输出维度，trace(TT^H)/Nout 衡量平均噪声增益。
+        noise_gain_flat = w_flat.abs().square().sum(dim=(-2, -1)) / z_flat.shape[-1]
 
         # z_flat:        [B*T*F, N_out]  -> [B, N_out, T, F]
         # h_seen_flat:   [B*T*F, N_out, L] -> [B, L, N_out, T, F]
@@ -255,6 +281,15 @@ class TransformGeneratorWrapper:
         batch["Y"] = y_new.to(torch.complex64)
         batch["H_hat"] = h_new.to(torch.complex64)
         batch["transform"] = self._transform
+        noise_gain_frame = noise_gain_flat.reshape(b, t, f).mean(dim=(1, 2))
+        batch["frontend_gamma"] = gamma_frame
+        batch["frontend_noise_gain"] = noise_gain_frame
+        if self._n0_mode == "mean_effective":
+            batch["N0"] = (n0_frame * noise_gain_frame).reshape(batch["N0"].shape)
+
+        self._diag_frames += b
+        self._diag_gamma_sum += float(gamma_frame.sum().item())
+        self._diag_noise_gain_sum += float(noise_gain_frame.sum().item())
 
         # Store W for diagnostics (omit from batch to save memory).
         return batch
@@ -364,6 +399,8 @@ def evaluate_snr_sweep(
     batch_size: int,
     seed: int,
     device: torch.device,
+    gamma_scale: float,
+    n0_mode: str,
 ) -> list[dict]:
     """Evaluate BER at a fixed list of SNR points."""
     results = []
@@ -380,11 +417,13 @@ def evaluate_snr_sweep(
                 channel_profile=base_generator.channel_profile,
             ),
             transform=transform,
-            haar_seed=eval_seed + 50000,
+            gamma_scale=gamma_scale,
+            n0_mode=n0_mode,
         )
         _, ber, errors, valid_bits = evaluate(
             model, gen, num_samples, batch_size, reset_seed=eval_seed
         )
+        diagnostics = gen.diagnostic_means
         results.append(
             {
                 "snr_db": snr,
@@ -392,9 +431,17 @@ def evaluate_snr_sweep(
                 "bit_errors": errors,
                 "valid_bits": valid_bits,
                 "transform": transform,
+                "mean_gamma": diagnostics["mean_gamma"],
+                "mean_noise_gain": diagnostics["mean_noise_gain"],
+                "gamma_scale": gamma_scale,
+                "n0_mode": n0_mode,
+                "ls_interpolation_type": DATA_CONFIG.ls_interpolation_type,
             }
         )
-        print(f"  SNR {snr:5.1f} dB | BER {ber:.6e} ({errors}/{valid_bits})")
+        print(
+            f"  SNR {snr:5.1f} dB | BER {ber:.6e} ({errors}/{valid_bits}) | "
+            f"noise gain {diagnostics['mean_noise_gain']:.3e}"
+        )
     return results
 
 
@@ -445,9 +492,17 @@ def build_model(device: torch.device) -> nn.Module:
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Train/eval real CNN under unitary transforms")
-    p.add_argument("--transforms", nargs="+",
-                   default=["identity", "haar", "qr", "svd", "polar"])
+    p = argparse.ArgumentParser(description="Unified linear-frontend Real-CNN experiment")
+    p.add_argument(
+        "--transforms", nargs="+",
+        choices=("identity", "qr", "svd", "polar", "mf", "tgamma", "lmmse"),
+        default=["identity", "qr", "svd", "polar", "mf", "tgamma", "lmmse"],
+    )
+    p.add_argument("--gamma_scale", type=float, default=1.0)
+    p.add_argument(
+        "--n0_mode", choices=("original", "mean_effective"), default="original",
+        help="N0 supplied to the CNN after non-unitary preprocessing.",
+    )
     p.add_argument("--epochs", type=int, default=30)
     p.add_argument("--num_train", type=int, default=10000)
     p.add_argument("--num_val", type=int, default=2000)
@@ -464,7 +519,7 @@ def parse_args():
     p.add_argument("--eval_snr_max", type=float, default=20.0)
     p.add_argument("--eval_snr_step", type=float, default=2.0)
     p.add_argument("--output_dir",
-                   default="tests/representation_invariance/runs")
+                   default="tests/representation_invariance/runs_unified_lin")
     p.add_argument("--skip_train", action="store_true",
                    help="Skip training, load existing checkpoints.")
     return p.parse_args()
@@ -472,6 +527,8 @@ def parse_args():
 
 def main():
     args = parse_args()
+    if args.gamma_scale <= 0:
+        raise ValueError("--gamma_scale must be positive.")
     device = torch.device(args.device)
     if device.type == "cuda" and not torch.cuda.is_available():
         device = torch.device("cpu")
@@ -482,6 +539,8 @@ def main():
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    with (output_dir / "experiment_config.json").open("w", encoding="utf-8") as file:
+        json.dump(vars(args), file, indent=2, ensure_ascii=False)
 
     train_profile = legacy_channel_profile(DATA_CONFIG)
     eval_snr_list = list(
@@ -490,6 +549,8 @@ def main():
 
     print(f"Device: {device}")
     print(f"Transforms: {args.transforms}")
+    print(f"LS interpolation: {DATA_CONFIG.ls_interpolation_type}")
+    print(f"gamma = {args.gamma_scale:g} * N0 / Es | N0 mode: {args.n0_mode}")
     print(f"Topology: {DATA_CONFIG.num_layers}×{DATA_CONFIG.num_rx_ant} MIMO")
     print(f"Eval SNR: {eval_snr_list}")
 
@@ -502,9 +563,15 @@ def main():
         print(f"[{idx+1}/{len(args.transforms)}] Transform: {transform}")
         print(f"{'='*60}")
 
+        # 所有方案从完全相同的模型初始化开始。
+        torch.manual_seed(args.seed)
+        if device.type == "cuda":
+            torch.cuda.manual_seed_all(args.seed)
         model = build_model(device)
 
-        if args.skip_train and ckpt_path.exists():
+        if args.skip_train:
+            if not ckpt_path.exists():
+                raise FileNotFoundError(ckpt_path)
             print(f"Loading checkpoint: {ckpt_path}")
             ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
             model.load_state_dict(ckpt["model_state"])
@@ -521,7 +588,8 @@ def main():
                     channel_profile=train_profile,
                 ),
                 transform=transform,
-                haar_seed=args.seed + 100,
+                gamma_scale=args.gamma_scale,
+                n0_mode=args.n0_mode,
             )
             val_gen = TransformGeneratorWrapper(
                 SionnaSUMIMOBatchGenerator(
@@ -534,7 +602,8 @@ def main():
                     channel_profile=train_profile,
                 ),
                 transform=transform,
-                haar_seed=args.seed + 200100,
+                gamma_scale=args.gamma_scale,
+                n0_mode=args.n0_mode,
             )
 
             optimizer = torch.optim.AdamW(
@@ -560,7 +629,13 @@ def main():
                 if val_bce < best_val_bce:
                     best_val_bce = val_bce
                     torch.save(
-                        {"model_state": model.state_dict(), "transform": transform},
+                        {
+                            "model_state": model.state_dict(),
+                            "transform": transform,
+                            "gamma_scale": args.gamma_scale,
+                            "n0_mode": args.n0_mode,
+                            "ls_interpolation_type": DATA_CONFIG.ls_interpolation_type,
+                        },
                         ckpt_path,
                     )
                     print(f"  -> best checkpoint saved")
@@ -583,7 +658,7 @@ def main():
         results = evaluate_snr_sweep(
             model, base_gen_for_eval, transform,
             eval_snr_list, args.num_test, args.batch_size,
-            args.seed + 777000, device,
+            args.seed + 777000, device, args.gamma_scale, args.n0_mode,
         )
         all_results[transform] = results
 
@@ -592,9 +667,13 @@ def main():
     print("Plotting results...")
     plt.figure(figsize=(10, 6))
 
-    markers = {"identity": "o", "haar": "s", "qr": "^", "svd": "D", "polar": "v"}
+    markers = {
+        "identity": "o", "qr": "^", "svd": "D", "polar": "v",
+        "mf": "P", "tgamma": "X", "lmmse": "s",
+    }
     colors = {
-        "identity": "C0", "haar": "C1", "qr": "C2", "svd": "C3", "polar": "C4",
+        "identity": "C0", "qr": "C2", "svd": "C3", "polar": "C4",
+        "mf": "C1", "tgamma": "C5", "lmmse": "C6",
     }
 
     for transform in args.transforms:
@@ -611,7 +690,7 @@ def main():
 
     plt.xlabel("SNR (dB)")
     plt.ylabel("BER")
-    plt.title("SU-MIMO Real CNN: Unitary Representation Sensitivity\n"
+    plt.title("SU-MIMO Real CNN: Unified Linear Frontend Comparison\n"
               f"TDL-A, {DATA_CONFIG.num_layers}×{DATA_CONFIG.num_rx_ant} MIMO, "
               f"{DATA_CONFIG.num_ofdm_symbols} sym × {DATA_CONFIG.fft_size} SC")
     plt.grid(True, which="both", alpha=0.3)
@@ -624,7 +703,14 @@ def main():
     # Also save raw CSV
     csv_path = output_dir / "results.csv"
     with csv_path.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["transform", "snr_db", "ber", "bit_errors", "valid_bits"])
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "transform", "snr_db", "ber", "bit_errors", "valid_bits",
+                "mean_gamma", "mean_noise_gain", "gamma_scale", "n0_mode",
+                "ls_interpolation_type",
+            ],
+        )
         writer.writeheader()
         for transform, results in all_results.items():
             for r in results:
