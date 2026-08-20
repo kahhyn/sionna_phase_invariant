@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -47,6 +49,62 @@ class ComplexConv2d(nn.Module):
             imag = imag + self.bias_imag.view(1, -1, 1, 1)
 
         return torch.complex(real, imag)
+
+
+class WidelyLinearComplexConv2d(nn.Module):
+    """Widely-linear complex convolution ``W*z + V*conj(z)``.
+
+    A standard complex convolution only represents complex-linear maps.  The
+    independent conjugate branch adds the anti-linear component required to
+    represent an arbitrary real-linear map between complex feature spaces.
+    Both branches are scaled by ``1/sqrt(2)`` so their summed initialization
+    has approximately the same variance as :class:`ComplexConv2d`.
+    """
+
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        kernel_size=3,
+        padding=1,
+        bias=False,
+    ):
+        super().__init__()
+        self.linear = ComplexConv2d(
+            in_channels,
+            out_channels,
+            kernel_size=kernel_size,
+            padding=padding,
+            bias=False,
+        )
+        self.antilinear = ComplexConv2d(
+            in_channels,
+            out_channels,
+            kernel_size=kernel_size,
+            padding=padding,
+            bias=False,
+        )
+        if bias:
+            self.bias_real = nn.Parameter(torch.zeros(out_channels))
+            self.bias_imag = nn.Parameter(torch.zeros(out_channels))
+        else:
+            self.register_parameter("bias_real", None)
+            self.register_parameter("bias_imag", None)
+
+    def forward(self, z):
+        if not torch.is_complex(z):
+            raise TypeError(
+                "WidelyLinearComplexConv2d expects a complex tensor."
+            )
+        out = (
+            self.linear(z) + self.antilinear(torch.conj(z))
+        ) / math.sqrt(2.0)
+        if self.bias_real is not None:
+            bias = torch.complex(self.bias_real, self.bias_imag).view(
+                1, -1, 1, 1
+            )
+            out = out + bias
+        return out
 
 
 class AmplitudeGate(nn.Module):

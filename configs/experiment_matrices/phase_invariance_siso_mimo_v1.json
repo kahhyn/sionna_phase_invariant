@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "experiment_id": "phase_invariance_siso_mimo_v1",
+  "research_question": "When does an explicit common-phase invariant inductive bias improve ID and channel-OOD receiver performance in SISO and two-layer SU-MIMO?",
+  "primary_claim": "The invariant receiver improves paired BER and BLER selectively under phase and channel distribution shifts, and the effect depends on the spatial observation dimension.",
+  "falsification_criteria": [
+    "The paired invariant-minus-sensitive effect is non-improving across the declared OOD tests.",
+    "Any apparent gain is driven by unequal inputs, training budgets, checkpoint selection, or random samples."
+  ],
+  "decision_rule": "Retain phase invariance only for system and domain cells with a positive paired effect that is stable across declared seeds and is not offset by a material ID regression.",
+  "systems": [
+    {"id": "siso_1l1rx", "num_layers": 1, "num_rx_ant": 1},
+    {"id": "mimo_2l2rx", "num_layers": 2, "num_rx_ant": 2},
+    {"id": "mimo_2l16rx", "num_layers": 2, "num_rx_ant": 16}
+  ],
+  "train_domains": [
+    {
+      "id": "tdl_a",
+      "profile": "configs/channel_profiles/tdl_a_10ns_normalized.json",
+      "description": "Extreme-narrow source domain: TDL-A, 10 ns, 200 Hz."
+    },
+    {
+      "id": "tdl_mix",
+      "profile": "configs/channel_profiles/tdl_mix_normalized.json",
+      "description": "Broad source domain: TDL A-E, 10/30/100/300 ns, 200 Hz."
+    }
+  ],
+  "test_domains": [
+    {"id": "id_fixed", "profile": "train", "phase_mode": "fixed"},
+    {"id": "phase_ood", "profile": "train", "phase_mode": "uniform"},
+    {
+      "id": "delay_ood",
+      "profile": "configs/channel_profiles/tdl_a_600_1000_ood_normalized.json",
+      "phase_mode": "uniform"
+    },
+    {
+      "id": "doppler_ood",
+      "profile": "configs/channel_profiles/tdl_a_10ns_doppler_ood_normalized.json",
+      "phase_mode": "uniform",
+      "component_ids": [
+        "tdl_A_10ns_fd0",
+        "tdl_A_10ns_fd400",
+        "tdl_A_10ns_fd800",
+        "tdl_A_10ns_fd1200"
+      ]
+    },
+    {"id": "quadriga_ood", "profile": "external_mat", "phase_mode": "uniform"}
+  ],
+  "training": {
+    "train_phase_mode": "fixed",
+    "validation_phase_mode": "fixed",
+    "samples_per_epoch": 10000,
+    "validation_samples": 2000,
+    "batch_size": 64,
+    "snr_db_min": -5,
+    "snr_db_max": 20,
+    "siso": {
+      "epochs": 50,
+      "optimizer": "Adam",
+      "base_lr": 0.001,
+      "scheduler": "constant"
+    },
+    "su_mimo": {
+      "epochs": 130,
+      "optimizer": "AdamW",
+      "base_lr": 0.001,
+      "scheduler": "cosine",
+      "lr_min": 0.00001,
+      "warmup_epochs": 5,
+      "constant_tail_epochs": 30
+    },
+    "selection_rule": "minimum source-validation BCE"
+  },
+  "evaluation": {
+    "primary_metric": {"name": "frame_bler", "direction": "lower"},
+    "secondary_metrics": ["post_ldpc_ber", "pre_ldpc_ber", "uncoded_ber", "bce"],
+    "target_test_usage": "final_only",
+    "minimum_block_errors": 500,
+    "maximum_blocks": 20000,
+    "paired_by": ["system", "train_domain", "train_seed", "test_domain", "component", "eval_seed", "snr"]
+  },
+  "intentional_differences": [
+    "SISO uses a Hermitian invariant readout; SU-MIMO uses the phase-canonical receiver.",
+    "The phase-sensitive receiver is the parameter-matched control for each system."
+  ]
+}

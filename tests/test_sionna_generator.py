@@ -210,6 +210,53 @@ class SionnaGeneratorTest(unittest.TestCase):
             low_unit_noise, high_unit_noise, atol=2e-6, rtol=2e-6
         )
 
+    def test_umi_and_uma_profiles_preserve_siso_contract(self):
+        for scenario in ("umi", "uma"):
+            with self.subTest(scenario=scenario):
+                generator = SionnaOFDMBatchGenerator(
+                    snr_db_min=5.0,
+                    snr_db_max=5.0,
+                    phase_mode="uniform",
+                    seed=24680,
+                    device=self.device,
+                    channel_profile=(
+                        f"configs/channel_profiles/{scenario}_normalized.json"
+                    ),
+                )
+                full_batch = generator.generate_batch(4)
+                batch = generator.generate_batch(3, return_aux=True)
+                self.assertEqual(full_batch["Y"].shape, (4, 14, 72))
+                self.assertEqual(batch["Y"].shape, (3, 14, 72))
+                self.assertEqual(batch["H"].shape, (3, 14, 72))
+                self.assertEqual(batch["H_hat"].shape, (3, 14, 72))
+                self.assertEqual(batch["channel_backend"], scenario)
+                self.assertEqual(batch["ut_distance_m"].shape, (3, 1))
+                self.assertEqual(batch["ut_speed_mps"].shape, (3, 1))
+                self.assertTrue(torch.isfinite(batch["H_hat"].real).all())
+                self.assertTrue(torch.isfinite(batch["H_hat"].imag).all())
+
+    def test_umi_reset_reproduces_topology_and_batch(self):
+        generator = SionnaOFDMBatchGenerator(
+            snr_db_min=0.0,
+            snr_db_max=0.0,
+            phase_mode="uniform",
+            seed=1122,
+            device=self.device,
+            channel_profile="configs/channel_profiles/umi_normalized.json",
+        )
+        first = generator.generate_batch(2, return_aux=True)
+        generator.reset()
+        second = generator.generate_batch(2, return_aux=True)
+        for key in [
+            "bits",
+            "H",
+            "Y_unrotated",
+            "phi",
+            "ut_distance_m",
+            "ut_speed_mps",
+        ]:
+            torch.testing.assert_close(first[key], second[key])
+
 
 @unittest.skipUnless(torch.cuda.is_available(), "Sionna migration tests require CUDA")
 class SionnaLDPCGeneratorTest(unittest.TestCase):

@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "experiment_id": "phase_invariance_siso_mimo_v1",
+  "historical_siso_not_used_by_formal_matrix": {
+    "reason": "best.pt selected on uniform-phase validation, which is a target OOD condition in matrix v1",
+    "tdl_a": "checkpoints/continual_source/{model}_seed{seed}.pt",
+    "tdl_mix": "checkpoints/generalization/tdl_mix_normalized/{model}_seed{seed}.pt"
+  },
+  "mimo_tdl_mix": {
+    "su_mimo_phase_canonical_rx2_seed0": {
+      "path": "checkpoints/phase_invariance_matrix_v1/mimo_tdl_mix/su_mimo_phase_canonical_rx2_seed0.pt",
+      "sha256": "db7cf3386e932c7769d02f41a43c5542f4af6ff9127bb782e5743249372b0464"
+    },
+    "su_mimo_phase_sensitive_rx2_seed0": {
+      "path": "checkpoints/phase_invariance_matrix_v1/mimo_tdl_mix/su_mimo_phase_sensitive_rx2_seed0.pt",
+      "sha256": "f260fbed09cad7084e6c33a89b5f623629f6d2d49c0cd04bd0bf7ffe42c782c1"
+    },
+    "su_mimo_phase_canonical_rx16_seed0": {
+      "path": "checkpoints/phase_invariance_matrix_v1/mimo_tdl_mix/su_mimo_phase_canonical_rx16_seed0.pt",
+      "sha256": "fcfd13f6978b002bd67ac0b1a09a671e2723e477eb3e181eb988d45aa9d79017"
+    },
+    "su_mimo_phase_sensitive_rx16_seed0": {
+      "path": "checkpoints/phase_invariance_matrix_v1/mimo_tdl_mix/su_mimo_phase_sensitive_rx16_seed0.pt",
+      "sha256": "ea1f281ae47dd7bcfaad0b4067dd04f99421dd4df15c909f106ae53009201215"
+    }
+  },
+  "missing_by_design": [
+    "single_branch_n0_gate_tdl_a_fixed_validation",
+    "strict_matched_complex_p_n0_gate_tdl_a_fixed_validation",
+    "single_branch_n0_gate_tdl_mix_fixed_validation",
+    "strict_matched_complex_p_n0_gate_tdl_mix_fixed_validation",
+    "su_mimo_phase_canonical_rx2_tdl_a",
+    "su_mimo_phase_sensitive_rx2_tdl_a",
+    "su_mimo_phase_canonical_rx16_tdl_a",
+    "su_mimo_phase_sensitive_rx16_tdl_a"
+  ]
+}

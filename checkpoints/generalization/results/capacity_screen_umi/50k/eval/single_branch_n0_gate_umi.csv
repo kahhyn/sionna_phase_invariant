@@ -1,0 +1,6 @@
+snr_db,bce,ber,bit_errors,valid_bits,model,train_seed,eval_seed,common_random_numbers,train_profile,test_profile,backend,scenario,tdl_model,delay_ns,dmrs_freq_spacing
+-10.0,0.659685527836835,0.3986494276258681,705399,1769472,single_branch_n0_gate,0,777000,1,umi_normalized,umi_normalized,umi,umi,,,1
+0.0,0.38853830099105835,0.18175365306712962,321608,1769472,single_branch_n0_gate,0,777000,1,umi_normalized,umi_normalized,umi,umi,,,1
+10.0,0.03163960217325776,0.013374611183449073,23666,1769472,single_branch_n0_gate,0,777000,1,umi_normalized,umi_normalized,umi,umi,,,1
+16.0,0.0073455579371915925,0.003127486617476852,5534,1769472,single_branch_n0_gate,0,777000,1,umi_normalized,umi_normalized,umi,umi,,,1
+20.0,0.003666675201168767,0.0013439037181712963,2378,1769472,single_branch_n0_gate,0,777000,1,umi_normalized,umi_normalized,umi,umi,,,1

@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "experiment_id": "su_mimo_widely_linear_tdl_a_v1",
+  "research_question": "Does adding an independent conjugate branch to complex convolutions close the real-CNN performance gap as the receive-array size grows?",
+  "primary_claim": "The missing anti-linear branch W_conj*conj(z), rather than complex representation alone, explains a material part of the Rx16 real-CNN advantage.",
+  "falsification_criteria": [
+    "The widely-linear receiver remains close to the standard complex receiver and materially behind the real CNN at Rx16.",
+    "Any apparent gain is explained by unequal semantic inputs, real-parameter count, streaming samples, optimization budget, checkpoint selection, or evaluation samples."
+  ],
+  "decision_rule": "Advance the widely-linear backbone only if it recovers at least half of the standard-complex-to-real-CNN gap at Rx16 in the reliable BLER region without a material Rx2 regression. Otherwise investigate complex activations, normalization, or early antenna compression.",
+  "project": {
+    "code_revision": "recorded by training.train_su_mimo",
+    "environment": "existing sionna-pi environment",
+    "output_dir": "runs/su_mimo_widely_linear_tdl_a_v1"
+  },
+  "dataset": {
+    "split_unit": "independently generated OFDM frame",
+    "train_domains": ["tdl_A_10ns_normalized"],
+    "validation_domains": ["tdl_A_10ns_normalized"],
+    "test_domains": ["tdl_A_10ns_normalized"],
+    "training_mode": "streaming: every epoch generates new frames",
+    "samples_per_epoch": 10000,
+    "validation_samples": 2000,
+    "normalization_fit_scope": "none",
+    "augmentation_scope": "train_only"
+  },
+  "systems": [
+    {"id": "mimo_2l2rx", "num_layers": 2, "num_rx_ant": 2},
+    {"id": "mimo_2l16rx", "num_layers": 2, "num_rx_ant": 16}
+  ],
+  "methods": [
+    {
+      "id": "standard_complex",
+      "role": "baseline",
+      "model": "su_mimo_phase_sensitive",
+      "convolution": "W*z"
+    },
+    {
+      "id": "widely_linear_complex",
+      "role": "proposed",
+      "model": "su_mimo_widely_linear",
+      "convolution": "W*z + V*conj(z)"
+    },
+    {
+      "id": "real_cnn",
+      "role": "control",
+      "model": "su_mimo_real_cnn",
+      "convolution": "unconstrained real convolution on stacked real/imaginary channels"
+    }
+  ],
+  "training": {
+    "train_phase_mode": "uniform",
+    "validation_phase_mode": "uniform",
+    "epochs": 130,
+    "batch_size": 64,
+    "optimizer": "AdamW",
+    "base_lr": 0.001,
+    "scheduler": "cosine",
+    "lr_min": 0.00001,
+    "warmup_epochs": 5,
+    "constant_tail_epochs": 30,
+    "selection_rule": "minimum source-validation BCE",
+    "train_seeds": [0]
+  },
+  "evaluation": {
+    "primary_metric": {"name": "frame_bler", "direction": "lower"},
+    "secondary_metrics": ["post_ldpc_ber", "pre_ldpc_ber", "validation_bce"],
+    "ebno_db": {
+      "mimo_2l2rx": [5, 7, 9],
+      "mimo_2l16rx": [-7, -5, -3]
+    },
+    "target_test_usage": "final_only",
+    "minimum_block_errors": 100,
+    "maximum_blocks": 5000,
+    "eval_seeds": [777000],
+    "paired_by": ["num_rx_ant", "train_seed", "eval_seed", "ebno_db"]
+  },
+  "intentional_differences": [
+    "Only the convolution family and automatically resolved widths differ.",
+    "All three methods are matched to the standard complex receiver's real-parameter budget within 0.1 percent."
+  ]
+}

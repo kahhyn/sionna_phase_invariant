@@ -62,10 +62,10 @@ foreach ($lr in $lrs) {
         $evalCsv = Join-Path $saveDir "ber.csv"
         New-Item -ItemType Directory -Force -Path $saveDir | Out-Null
 
-        $trainCmd = "python train.py --model single_branch --hidden $Hidden --hidden_complex $HiddenComplex --zero_complex $SingleZeroComplex --branch_layers $SingleBranchLayers --single_readout_mode low_rank --gate_type swiglu --h_hat_mode dmrs_ls_interp --dmrs_freq_spacing 1 --num_train $NumTrain --num_val $NumVal --epochs $Epochs --batch_size $BatchSize --snr_db_min -5 --snr_db_max 20 --lr $lr --weight_decay $wd --save_dir `"$saveDir`" --device $Device"
+        $trainCmd = "python -m training.train --model single_branch --hidden $Hidden --hidden_complex $HiddenComplex --zero_complex $SingleZeroComplex --branch_layers $SingleBranchLayers --single_readout_mode low_rank --gate_type swiglu --h_hat_mode dmrs_ls_interp --dmrs_freq_spacing 1 --num_train $NumTrain --num_val $NumVal --epochs $Epochs --batch_size $BatchSize --snr_db_min -5 --snr_db_max 20 --lr $lr --weight_decay $wd --save_dir `"$saveDir`" --device $Device"
         Invoke-And-Log -Command $trainCmd -LogPath $trainLog
 
-        $evalCmd = "python eval_ber.py --model single_branch --hidden $Hidden --hidden_complex $HiddenComplex --zero_complex $SingleZeroComplex --branch_layers $SingleBranchLayers --single_readout_mode low_rank --checkpoint `"$saveDir/best.pt`" --out_csv `"$evalCsv`" --device $Device"
+        $evalCmd = "python -m evaluation.eval_ber --model single_branch --hidden $Hidden --hidden_complex $HiddenComplex --zero_complex $SingleZeroComplex --branch_layers $SingleBranchLayers --single_readout_mode low_rank --checkpoint `"$saveDir/best.pt`" --out_csv `"$evalCsv`" --device $Device"
         Invoke-And-Log -Command $evalCmd -LogPath $evalLog
 
         $best = Get-BestValFromLog -LogPath $trainLog
@@ -91,10 +91,10 @@ if ($RunNoInterRef) {
     $evalCsv = Join-Path $saveDir "ber.csv"
     New-Item -ItemType Directory -Force -Path $saveDir | Out-Null
 
-    $trainCmd = "python train.py --model complex_no_interaction --hidden $Hidden --hidden_complex $HiddenComplex --zero_complex 32 --branch_layers 3 --gate_type swiglu --h_hat_mode dmrs_ls_interp --dmrs_freq_spacing 1 --num_train $NumTrain --num_val $NumVal --epochs $Epochs --batch_size $BatchSize --snr_db_min -5 --snr_db_max 20 --lr 1e-3 --weight_decay 0 --save_dir `"$saveDir`" --device $Device"
+    $trainCmd = "python -m training.train --model complex_no_interaction --hidden $Hidden --hidden_complex $HiddenComplex --zero_complex 32 --branch_layers 3 --gate_type swiglu --h_hat_mode dmrs_ls_interp --dmrs_freq_spacing 1 --num_train $NumTrain --num_val $NumVal --epochs $Epochs --batch_size $BatchSize --snr_db_min -5 --snr_db_max 20 --lr 1e-3 --weight_decay 0 --save_dir `"$saveDir`" --device $Device"
     Invoke-And-Log -Command $trainCmd -LogPath $trainLog
 
-    $evalCmd = "python eval_ber.py --model complex_no_interaction --hidden $Hidden --hidden_complex $HiddenComplex --zero_complex 32 --branch_layers 3 --checkpoint `"$saveDir/best.pt`" --out_csv `"$evalCsv`" --device $Device"
+    $evalCmd = "python -m evaluation.eval_ber --model complex_no_interaction --hidden $Hidden --hidden_complex $HiddenComplex --zero_complex 32 --branch_layers 3 --checkpoint `"$saveDir/best.pt`" --out_csv `"$evalCsv`" --device $Device"
     Invoke-And-Log -Command $evalCmd -LogPath $evalLog
 
     $best = Get-BestValFromLog -LogPath $trainLog

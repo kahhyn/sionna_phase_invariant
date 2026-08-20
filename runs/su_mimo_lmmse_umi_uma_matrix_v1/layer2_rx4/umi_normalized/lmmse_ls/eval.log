@@ -1,0 +1,9 @@
+Train profile: umi_uma_mix_normalized | test profile: umi_normalized | backend: umi | receiver: lmmse_ls
+Eb/N0   3.0 dB | frame BLER 6.025943e-01 | post-BER 9.328595e-02 | pre-BER 1.254490e-01 | errors 511/848
+Eb/N0   5.0 dB | frame BLER 4.169408e-01 | post-BER 6.358459e-02 | pre-BER 9.418450e-02 | errors 507/1216
+Eb/N0   7.0 dB | frame BLER 2.932243e-01 | post-BER 4.339399e-02 | pre-BER 6.922456e-02 | errors 502/1712
+Eb/N0   9.0 dB | frame BLER 1.977201e-01 | post-BER 2.815858e-02 | pre-BER 4.937657e-02 | errors 503/2544
+Eb/N0  11.0 dB | frame BLER 1.265182e-01 | post-BER 1.777259e-02 | pre-BER 3.388382e-02 | errors 500/3952
+Eb/N0  13.0 dB | frame BLER 7.867462e-02 | post-BER 1.118439e-02 | pre-BER 2.359422e-02 | errors 501/6368
+Saved aggregate CSV to runs/su_mimo_lmmse_umi_uma_matrix_v1/layer2_rx4/umi_normalized/lmmse_ls/bler.csv
+Saved per-layer CSV to runs/su_mimo_lmmse_umi_uma_matrix_v1/layer2_rx4/umi_normalized/lmmse_ls/bler_per_layer.csv

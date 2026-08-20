@@ -45,21 +45,136 @@ def _prepare_zero_features(P, N0, batch_size, t, f, device):
     return P, N0_grid
 
 
-class RealImagCNN(nn.Module):
-    """
-    Ordinary real-valued CNN baseline.
+class RealZeroOrderAmplitudeGate(nn.Module):
+    """Condition a real feature map on the pilot mask and log noise power."""
 
-    Input channels:
-        Re(Y), Im(Y), Re(H_hat), Im(H_hat), P, log(N0)
-    This model does NOT structurally guarantee common phase invariance.
-    """
-    def __init__(self, hidden=32, bits_per_symbol=2):
+    def __init__(self, channels, condition_hidden=16):
         super().__init__()
+        if condition_hidden <= 0:
+            raise ValueError("condition_hidden must be positive.")
+        self.condition_net = nn.Sequential(
+            nn.Conv2d(2, condition_hidden, kernel_size=3, padding=1),
+            nn.SiLU(),
+            nn.Conv2d(condition_hidden, channels, kernel_size=1),
+        )
 
-        self.net = nn.Sequential(
-            nn.Conv2d(6, hidden, kernel_size=3, padding=1),
+        # Match the invariant model's identity initialization for P/N0 gates.
+        nn.init.zeros_(self.condition_net[-1].weight)
+        nn.init.zeros_(self.condition_net[-1].bias)
+
+    def forward(self, x, zero_features):
+        if zero_features.shape[1] != 2:
+            raise ValueError("zero_features must contain P and log(N0).")
+        scale = 2.0 * torch.sigmoid(self.condition_net(zero_features))
+        return x * scale
+
+
+class RealResidualBlock(nn.Module):
+    """Two-convolution residual block used by the matched real baseline."""
+
+    def __init__(self, channels, kernel_size=3, use_norm=True):
+        super().__init__()
+        padding = kernel_size // 2
+        self.conv1 = nn.Conv2d(
+            channels, channels, kernel_size=kernel_size, padding=padding
+        )
+        self.norm1 = _make_group_norm(channels) if use_norm else nn.Identity()
+        self.conv2 = nn.Conv2d(
+            channels, channels, kernel_size=kernel_size, padding=padding
+        )
+        self.norm2 = _make_group_norm(channels) if use_norm else nn.Identity()
+        self.activation = nn.SiLU()
+
+    def forward(self, x):
+        residual = x
+        x = self.activation(self.norm1(self.conv1(x)))
+        x = self.norm2(self.conv2(x))
+        return self.activation(x + residual)
+
+
+class RealImagCNN(nn.Module):
+    """Parameter/depth-matched ordinary real-valued CNN baseline.
+
+    The semantic inputs are exactly those of ``single_branch_n0_gate``:
+    ``Y``, ``H_hat``, the pilot mask ``P``, and ``N0``. Complex tensors are
+    represented by their real and imaginary parts; no invariant feature is
+    constructed. P/log(N0) condition the trunk at the same three macro
+    locations as the two-block invariant model and are concatenated before
+    the common LLR-head pattern.
+
+    With the formal experiment settings (hidden=64, trunk_hidden=50,
+    num_blocks=2, condition_hidden=16), this model has 204,558 trainable
+    parameters versus 204,599 for ``single_branch_n0_gate`` (-0.02%). Both
+    models have ten sequential convolutional stages on their longest spatial
+    path. This model intentionally does not guarantee common-phase invariance.
+    """
+
+    def __init__(
+        self,
+        hidden=64,
+        trunk_hidden=50,
+        bits_per_symbol=2,
+        num_blocks=2,
+        kernel_size=3,
+        use_norm=True,
+        condition_hidden=16,
+    ):
+        super().__init__()
+        if num_blocks <= 0:
+            raise ValueError("num_blocks must be positive.")
+        padding = kernel_size // 2
+
+        # Y and H_hat are split into four ordinary real-valued channels.
+        self.input_conv = nn.Conv2d(
+            4,
+            trunk_hidden,
+            kernel_size=kernel_size,
+            padding=padding,
+        )
+        self.input_norm = (
+            _make_group_norm(trunk_hidden) if use_norm else nn.Identity()
+        )
+        self.input_gate = RealZeroOrderAmplitudeGate(
+            trunk_hidden, condition_hidden=condition_hidden
+        )
+        self.input_activation = nn.SiLU()
+
+        self.blocks = nn.ModuleList(
+            [
+                RealResidualBlock(
+                    trunk_hidden,
+                    kernel_size=kernel_size,
+                    use_norm=use_norm,
+                )
+                for _ in range(num_blocks)
+            ]
+        )
+        self.block_zero_gates = nn.ModuleList(
+            [
+                RealZeroOrderAmplitudeGate(
+                    trunk_hidden, condition_hidden=condition_hidden
+                )
+                for _ in range(num_blocks)
+            ]
+        )
+
+        # Match the invariant readout's 64 real output channels and 1x1 mix.
+        self.readout = nn.Conv2d(
+            trunk_hidden,
+            hidden,
+            kernel_size=kernel_size,
+            padding=padding,
+        )
+        self.readout_norm = _make_group_norm(hidden) if use_norm else nn.Identity()
+        self.readout_activation = nn.SiLU()
+        self.mixchannel = nn.Conv2d(hidden, hidden, kernel_size=1)
+
+        self.llr_head = nn.Sequential(
+            nn.Conv2d(hidden + 2, hidden, kernel_size=3, padding=1),
+            _make_group_norm(hidden) if use_norm else nn.Identity(),
             nn.ReLU(),
             nn.Conv2d(hidden, hidden, kernel_size=3, padding=1),
+            _make_group_norm(hidden) if use_norm else nn.Identity(),
             nn.ReLU(),
             nn.Conv2d(hidden, bits_per_symbol, kernel_size=1),
         )
@@ -70,20 +185,26 @@ class RealImagCNN(nn.Module):
 
         b, t, f = Y.shape
         P, N0_grid = _prepare_zero_features(P, N0, b, t, f, Y.device)
-
+        zero_features = torch.cat([P, N0_grid], dim=1)
         x = torch.cat(
             [
                 Y.real.unsqueeze(1),
                 Y.imag.unsqueeze(1),
                 H_hat.real.unsqueeze(1),
                 H_hat.imag.unsqueeze(1),
-                P,
-                N0_grid,
             ],
             dim=1,
         )
 
-        return self.net(x)
+        x = self.input_norm(self.input_conv(x))
+        x = self.input_gate(x, zero_features)
+        x = self.input_activation(x)
+        for block, zero_gate in zip(self.blocks, self.block_zero_gates):
+            x = zero_gate(block(x), zero_features)
+
+        x = self.readout_activation(self.readout_norm(self.readout(x)))
+        x = self.mixchannel(x)
+        return self.llr_head(torch.cat([x, P, N0_grid], dim=1))
 
 
 class PhysicalFeatureCNN_OLD(nn.Module):

@@ -3,12 +3,16 @@
 This branch keeps the existing PyTorch receiver models and replaces the
 hand-written physical-layer data path with Sionna 2.x blocks.
 
+The complete commands and parameter reference for the current TDL/UMi/UMa
+experiments are in
+[`docs/TRAINING_EVALUATION_GUIDE.md`](docs/TRAINING_EVALUATION_GUIDE.md).
+
 ## Implemented chain
 
 ```text
 legacy-labeled QPSK
   -> Sionna ResourceGrid / custom DMRS PilotPattern
-  -> 3GPP TR 38.901 TDL channel
+  -> 3GPP TR 38.901 TDL, UMi, or UMa channel profile
   -> Sionna AWGN
   -> Sionna LS estimation and interpolation
   -> legacy-compatible batch dictionary
@@ -19,6 +23,42 @@ The default setup is SISO, 14 OFDM symbols, 72 subcarriers, 30 kHz SCS,
 TDL-A with 10 ns delay spread, up to 200 Hz Doppler, and full-symbol DMRS at
 OFDM symbols 2 and 11. Noise power follows the legacy project's measured
 symbol-SNR convention rather than an `Eb/N0` conversion.
+
+## TDL / UMi / UMa channel profiles
+
+The generator accepts JSON profiles that select a fixed channel or balance a
+bank of channels at batch granularity. The normalized profiles under
+`configs/channel_profiles/` keep pathloss and shadow fading disabled and keep
+channel normalization enabled. They test small-scale channel-structure
+generalization; they do not represent a realistic coverage/link-budget test.
+
+Minimal UMi training:
+
+```bash
+python -m training.train_sionna \
+  --model single_branch_n0_gate \
+  --train_channel_profile configs/channel_profiles/umi_normalized.json \
+  --val_channel_profile configs/channel_profiles/umi_normalized.json \
+  --epochs 1 --num_train 128 --num_val 64 --batch_size 16 \
+  --snr_db_min -10 --snr_db_max 20 \
+  --save_dir runs/smoke_umi_single
+```
+
+To evaluate a checkpoint on one fixed domain from the TDL bank:
+
+```bash
+python -m evaluation.eval_ber_sionna \
+  --checkpoint runs/smoke_umi_single/best.pt \
+  --eval_channel_profile configs/channel_profiles/tdl_mix_normalized.json \
+  --eval_component_id tdl_C_100ns \
+  --snr_list=-4,0,4 --num_samples 256 --common_random_numbers \
+  --out_csv runs/smoke_umi_single/ber_tdl_C_100ns.csv
+```
+
+The complete 22-domain suite and pooled result matrices are managed by
+`scripts/run_channel_generalization.sh`. See
+`experiments/channel_generalization/README.md` and
+`docs/TDL_UMI_UMA_GENERALIZATION_PLAN.md`.
 
 ## Environment
 
@@ -36,25 +76,25 @@ after the input projection and after each residual block, so common-phase
 equivariance is preserved. The gate starts as the identity.
 
 ```bash
-python train_sionna.py --model single_branch_n0_gate --hidden 64 --hidden_complex 32 --zero_gate_hidden 16 --snr_db_min -10 --snr_db_max 20 --epochs 50 --batch_size 64 --num_train 10000 --num_val 2000 --train_phase_mode fixed --val_phase_mode uniform --save_dir runs/sionna_single_n0_gate
+python -m training.train_sionna --model single_branch_n0_gate --hidden 64 --hidden_complex 32 --zero_gate_hidden 16 --snr_db_min -10 --snr_db_max 20 --epochs 50 --batch_size 64 --num_train 10000 --num_val 2000 --train_phase_mode fixed --val_phase_mode uniform --save_dir runs/sionna_single_n0_gate
 ```
 
 Single-branch invariant receiver:
 
 ```bash
-python train_sionna.py --model single_branch --hidden 64 --hidden_complex 32 --epochs 50 --batch_size 64 --num_train 10000 --num_val 2000 --train_phase_mode fixed --val_phase_mode uniform --save_dir runs/sionna_single_h64_hc32
+python -m training.train_sionna --model single_branch --hidden 64 --hidden_complex 32 --epochs 50 --batch_size 64 --num_train 10000 --num_val 2000 --train_phase_mode fixed --val_phase_mode uniform --save_dir runs/sionna_single_h64_hc32
 ```
 
 Complex no-interaction receiver:
 
 ```bash
-python train_sionna.py --model complex_no_interaction --hidden 32 --hidden_complex 64 --branch_layers 3 --epochs 50 --batch_size 64 --num_train 10000 --num_val 2000 --train_phase_mode fixed --val_phase_mode uniform --save_dir runs/sionna_complex_h32_hc64_l3
+python -m training.train_sionna --model complex_no_interaction --hidden 32 --hidden_complex 64 --branch_layers 3 --epochs 50 --batch_size 64 --num_train 10000 --num_val 2000 --train_phase_mode fixed --val_phase_mode uniform --save_dir runs/sionna_complex_h32_hc64_l3
 ```
 
 ## BER evaluation
 
 ```bash
-python eval_ber_sionna.py --checkpoint runs/sionna_single_h64_hc32/best.pt --phase_mode uniform --num_samples 4096 --batch_size 128 --out_csv runs/sionna_single_h64_hc32/ber_uniform.csv
+python -m evaluation.eval_ber_sionna --checkpoint runs/sionna_single_h64_hc32/best.pt --phase_mode uniform --num_samples 4096 --batch_size 128 --out_csv runs/sionna_single_h64_hc32/ber_uniform.csv
 ```
 
 BER and BCE are aggregated by valid bit count. The last partial batch is not
@@ -116,8 +156,152 @@ SNR_DB_MIN=-10 SNR_DB_MAX=20 USE_EXISTING_SEED0=0 INCLUDE_GATE_ABLATIONS=1 RUN_R
 
 This stage uses an ideal frequency-domain OFDM channel without waveform-level
 ICI/ISI. It supports full-symbol and comb DMRS patterns. Channel coding,
-waveform modulation with cyclic prefix, LMMSE estimation/equalization,
-higher-order QAM, and MIMO are intentionally left for later migration stages.
+waveform modulation with cyclic prefix, LMMSE estimation/equalization, and
+higher-order QAM are intentionally left for later migration stages. The
+SU-MIMO path below is a fixed-topology first stage rather than a general
+precoding or variable-rank implementation.
+
+### Minimal 2x2 SU-MIMO smoke stage
+
+The repository now contains an isolated first MIMO migration stage with one
+user, two spatial layers, two receive antennas, identity layer-to-antenna
+mapping, FDM-orthogonal DMRS, and fixed total user transmit power. Data power
+is split equally between the two layers. The accompanying receiver preserves
+common-phase invariance and layer-permutation equivariance through shared
+complex backbones and an equivariant masked-mean message-passing layer.
+
+Run its data, forward/backward, checkpoint, phase, permutation, tiny-overfit,
+training-resume, and BER-export checks with:
+
+```bash
+python -m unittest tests.test_su_mimo_smoke tests.test_su_mimo_train_eval \
+  tests.test_su_mimo_training_controls -v
+```
+
+A complete default 2x2 training run is:
+
+```bash
+python -m training.train_su_mimo \
+  --model su_mimo_phase_invariant \
+  --num_layers 2 --num_rx_ant 2 --total_tx_power 1.0 \
+  --train_channel_profile configs/channel_profiles/tdl_mix_normalized.json \
+  --val_channel_profile configs/channel_profiles/tdl_mix_normalized.json \
+  --train_phase_mode fixed --val_phase_mode fixed \
+  --snr_db_min -5 --snr_db_max 20 \
+  --num_train 10000 --num_val 2000 --epochs 130 --batch_size 64 \
+  --lr 1e-3 --lr_scheduler cosine --lr_min 1e-5 --warmup_epochs 5 \
+  --constant_tail_epochs 30 \
+  --seed 0 --train_generator_seed 0 --val_generator_seed 100000 \
+  --deterministic_algorithms \
+  --save_dir runs/su_mimo_2x2_warmup_cosine_tail30_seed0
+```
+
+The default widths (`hidden_complex=32`, `zero_real=22`, `hidden_real=66`)
+give exactly 204,599 trainable parameters, matching the existing
+`tdl_mix_normalized` SingleBranch and strict matched checkpoints. Select the
+equal-parameter phase-sensitive control with
+`--model su_mimo_phase_sensitive`. Both models keep layer-permutation
+equivariance; only the final readout's common-phase invariance differs.
+Select `--model su_mimo_phase_canonical` for the third, exactly
+parameter-matched receiver. It learns one phase reference shared across all
+layers and resource elements of each sample, removes only that common phase,
+and exposes the canonicalized complex features directly to the real LLR head.
+
+Train the 16-Rx and 2-Rx canonical receivers with the same deterministic
+130-epoch schedule used by the existing ablation:
+
+```bash
+PYTHON_BIN=/home/ahhy/venvs/sionna-pi/bin/python \
+SEED=0 \
+bash scripts/run_su_mimo_canonical_warmup_cosine.sh
+```
+
+The default schedule uses 5 warmup epochs, cosine decay through epoch 100, and
+a 30-epoch constant tail at `1e-5` for slow-convergence optimization. The
+runtime seed is applied before model construction, and the initialization
+hash is stored for provenance. Validation replays the same generator seed on
+every epoch. `best.pt` is selected by minimum validation BCE. `last.pt`,
+`history.csv`, and `resolved_config.json` are also saved together with the
+optimizer and LR-scheduler state. Resume an interrupted run with the same
+planned total target epoch; data, model, optimizer, and schedule settings are
+restored from the checkpoint:
+
+```bash
+python -m training.train_su_mimo \
+  --resume_checkpoint runs/su_mimo_2x2_warmup_cosine_tail30_seed0/last.pt \
+  --epochs 130
+```
+
+For a finite-data sample-efficiency comparison, use
+`--train_dataset_mode fixed`. In this mode `--num_train` is the exact number
+of distinct generated samples, not the number of newly drawn samples per
+epoch. Stable seeded shards reproduce the same finite corpus for both models
+without caching the large 16-Rx tensors. `--train_steps` gives all dataset
+sizes the same optimizer budget and selects the step-based warmup/cosine/tail
+arguments. Training scenarios can be restricted within an existing profile by
+component ID, TDL model, and an inclusive delay-spread range; the SNR range is
+still controlled by `--snr_db_min/--snr_db_max`.
+
+Run the recommended canonical-versus-sensitive matrix (500, 2,000, and
+10,000 distinct examples; three seeds; 20,000 optimizer steps each) with:
+
+```bash
+PYTHON_BIN=/home/ahhy/venvs/sionna-pi/bin/python \
+bash scripts/run_su_mimo_finite_data_matrix.sh
+```
+
+The matrix can be narrowed without editing the script. For example, this runs
+one seed at 2,000 examples using only TDL-A/B and 30--100 ns training channels,
+while validation continues to use the full source profile:
+
+```bash
+TRAIN_SIZES="2000" SEEDS="0" \
+TRAIN_TDL_MODELS="A B" \
+TRAIN_DELAY_SPREAD_MIN_NS=30 TRAIN_DELAY_SPREAD_MAX_NS=100 \
+PYTHON_BIN=/home/ahhy/venvs/sionna-pi/bin/python \
+bash scripts/run_su_mimo_finite_data_matrix.sh
+```
+
+Evaluate the validation-selected checkpoint with aggregate and per-layer BER,
+exact error counts, and Wilson 95% intervals:
+
+```bash
+python -m evaluation.eval_ber_su_mimo \
+  --checkpoint runs/su_mimo_2x2_seed0/best.pt \
+  --phase_mode uniform \
+  --snr_list=-10,-8,-6,-4,-2,0,2,4,6,8,10,12,14,16,18,20 \
+  --num_samples 4096 --batch_size 128 --seed 777000 \
+  --common_random_numbers \
+  --eval_channel_profile configs/channel_profiles/tdl_mix_normalized.json \
+  --out_csv runs/su_mimo_2x2_seed0/ber.csv
+```
+
+The same existing profile files can be used unchanged for SU-MIMO TDL, UMi,
+UMa, and mixed-profile runs. Select one profile component for a fixed-scenario
+test with `--eval_component_id`.
+
+For 5G NR LDPC evaluation, each layer carries one independent rate-matched
+codeword. The reported frame BLER counts a user frame as erroneous when any
+layer fails; the companion CSV reports per-layer BLER.
+
+```bash
+python -m evaluation.eval_bler_su_mimo \
+  --checkpoint runs/su_mimo_2x2_seed0/best.pt \
+  --ebno_list=-2,0,2,4,6,8 \
+  --coderate 0.5 --decoder_iterations 20 \
+  --batch_size 64 --target_block_errors 100 --max_blocks 20000 \
+  --seed 777000 --common_random_numbers \
+  --eval_channel_profile configs/channel_profiles/tdl_mix_normalized.json \
+  --out_csv runs/su_mimo_2x2_seed0/bler.csv
+```
+
+The implementation is in `data/sionna_su_mimo_generator.py`,
+`models/su_mimo_invariant_net.py`, `training/train_su_mimo.py`, and
+`evaluation/eval_ber_su_mimo.py`, and `evaluation/eval_bler_su_mimo.py`. The
+initial setup does not yet model precoding, CDM DMRS, variable layer counts
+during generation, or a classical MIMO evaluation baseline. UMi/UMa profiles
+use the configured multi-antenna Sionna panel arrays and therefore include
+their geometry-derived spatial channel behavior.
 
 ## 5G NR LDPC and BLER
 
@@ -134,7 +318,7 @@ logit convention used by this project.
 Single-checkpoint smoke evaluation:
 
 ```bash
-python eval_bler_sionna.py --checkpoint runs/sionna_multiseed_m10_p20/gated_seed0/best.pt --ebno_list=0,1,2,3,4,5,6,7,8 --coderate 0.5 --decoder_iterations 20 --batch_size 64 --target_block_errors 100 --max_blocks 20000 --seed 777000 --common_random_numbers --out_csv runs/sionna_ldpc_r050/gated_seed0.csv
+python -m evaluation.eval_bler_sionna --checkpoint runs/sionna_multiseed_m10_p20/gated_seed0/best.pt --ebno_list=0,1,2,3,4,5,6,7,8 --coderate 0.5 --decoder_iterations 20 --batch_size 64 --target_block_errors 100 --max_blocks 20000 --seed 777000 --common_random_numbers --out_csv runs/sionna_ldpc_r050/gated_seed0.csv
 ```
 
 Multi-seed comparison of No-interaction, ungated SingleBranch, and P+N0-gated

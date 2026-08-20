@@ -1,0 +1,9 @@
+git_commit=fb4dde42e8e834f9184be69dc3465da34de265fe
+created_utc=2026-07-21T10:06:42Z
+train_profile=configs/channel_profiles/umi_uma_mix_normalized.json
+test_suite=configs/channel_suites/generalization_normalized.json
+ M .vscode/settings.json
+ M models/baseline_cnn.py
+ M models/factory.py
+ M tests/test_model_factory.py
+?? scripts/run_realimag_matched_four_domains.sh

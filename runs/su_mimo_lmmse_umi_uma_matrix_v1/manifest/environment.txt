@@ -1,0 +1,22 @@
+started_utc=2026-08-20T15:50:44Z
+git_commit=4c9a6d0d807d13c857e1854f4a5c0ed182a6f1de
+git_status_begin
+ M .gitignore
+?? configs/experiment_matrices/su_mimo_lmmse_umi_uma_matrix_v1.json
+?? evaluation/aggregate_su_mimo_lmmse_matrix.py
+?? runs/su_mimo_lmmse_umi_uma_matrix_v1/
+?? scripts/run_su_mimo_lmmse_umi_uma_matrix.sh
+?? tests/representation_invariance/eval_cnn_frontends_vs_classical_lmmse.py
+?? tests/representation_invariance/runs/
+?? tests/representation_invariance/runs_unified_lin/eval_cnn_vs_classical_lmmse/
+?? tests/representation_invariance/runs_unified_lin/eval_cnn_vs_classical_lmmse_smoke/
+?? tests/representation_invariance/runs_unified_lin_smoke/
+?? tests/representation_invariance/runs_unified_lin_smoke_final/
+git_status_end
+python=Python 3.12.3
+device=cuda
+ebno_list=3,5,7,9,11,13
+batch_size=16
+target_errors=500
+max_blocks=20000
+eval_seed=777000

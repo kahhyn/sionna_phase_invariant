@@ -83,7 +83,7 @@ train_model() {
         return
     fi
 
-    python train_sionna.py \
+    python -m training.train_sionna \
         --model "$model" \
         --epochs "$EPOCHS" \
         --num_train "$NUM_TRAIN" \
@@ -106,7 +106,7 @@ evaluate_checkpoint() {
         echo "Skipping existing evaluation: $out_csv"
         return
     fi
-    python eval_ber_sionna.py \
+    python -m evaluation.eval_ber_sionna \
         --checkpoint "$checkpoint" \
         --phase_mode uniform \
         --snr_list="$SNR_LIST" \
@@ -231,7 +231,7 @@ for eval_seed in "${EVAL_SEEDS_ARRAY[@]}"; do
     done
 done
 
-python aggregate_ber_seeds.py \
+python -m evaluation.aggregate_ber_seeds \
     --input_files "${CSV_FILES[@]}" \
     --out_csv "$RUN_ROOT/ber_multiseed_summary.csv"
 

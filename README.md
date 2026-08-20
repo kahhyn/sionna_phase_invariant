@@ -2,6 +2,10 @@
 
 This is a minimal PyTorch project for testing a U(1)-invariant neural receiver idea.
 
+For the current Sionna 2.x TDL/UMi/UMa training, BER/BLER evaluation,
+QuaDRiGa evaluation, and published checkpoints, see
+[`docs/TRAINING_EVALUATION_GUIDE.md`](docs/TRAINING_EVALUATION_GUIDE.md).
+
 The first version uses a synthetic SISO-OFDM/QPSK dataset:
 
 ```text
@@ -26,11 +30,25 @@ phase_invariant_receiver/
 │   └── phase_invariant_net.py
 ├── data/
 │   └── ofdm_dataset.py
+├── training/
+│   ├── train.py
+│   ├── train_sionna.py
+│   └── finetune.py
+├── evaluation/
+│   ├── eval_ber.py
+│   ├── eval_ber_sionna.py
+│   ├── eval_bler_sionna.py
+│   ├── eval_invariance.py
+│   └── eval_phase_sweep.py
+├── experiments/
+│   └── continual_learning/
+├── scripts/
+│   └── run_sionna_multiseed.sh
+├── tools/
+│   └── compute_model_size.py
 ├── utils/
+│   ├── batching.py
 │   └── metrics.py
-├── train.py
-├── eval_invariance.py
-├── eval_ber.py
 ├── config.py
 └── requirements.txt
 ```
@@ -93,9 +111,9 @@ pip install -r requirements.txt
 Run the structural invariance test with random initialization:
 
 ```bash
-python eval_invariance.py --model real_imag_cnn
-python eval_invariance.py --model physical_cnn
-python eval_invariance.py --model phase_invariant
+python -m evaluation.eval_invariance --model real_imag_cnn
+python -m evaluation.eval_invariance --model physical_cnn
+python -m evaluation.eval_invariance --model phase_invariant
 ```
 
 Expected result:
@@ -109,15 +127,15 @@ phase_invariant: max |ΔLLR| near numerical precision
 Train models:
 
 ```bash
-python train.py --model real_imag_cnn --train_phase_mode fixed --val_phase_mode uniform --save_dir runs/real_fixed
-python train.py --model physical_cnn --train_phase_mode fixed --val_phase_mode uniform --save_dir runs/physical_fixed
-python train.py --model phase_invariant --train_phase_mode fixed --val_phase_mode uniform --save_dir runs/invariant_fixed
+python -m training.train --model real_imag_cnn --train_phase_mode fixed --val_phase_mode uniform --save_dir runs/real_fixed
+python -m training.train --model physical_cnn --train_phase_mode fixed --val_phase_mode uniform --save_dir runs/physical_fixed
+python -m training.train --model phase_invariant --train_phase_mode fixed --val_phase_mode uniform --save_dir runs/invariant_fixed
 ```
 
 Evaluate a trained model:
 
 ```bash
-python eval_ber.py --model phase_invariant --checkpoint runs/invariant_fixed/best.pt --phase_mode uniform --out_csv invariant_ber.csv
+python -m evaluation.eval_ber --model phase_invariant --checkpoint runs/invariant_fixed/best.pt --phase_mode uniform --out_csv invariant_ber.csv
 ```
 
 ## Important experiment settings
@@ -183,8 +201,8 @@ Then it fills non-DMRS OFDM symbols by linear interpolation along the time dimen
 Example:
 
 ```bash
-python train.py --model phase_invariant --h_hat_mode dmrs_ls_interp --train_phase_mode fixed --val_phase_mode uniform --save_dir runs/invariant_dmrs
-python train.py --model physical_cnn --h_hat_mode dmrs_ls_interp --train_phase_mode fixed --val_phase_mode uniform --save_dir runs/physical_dmrs
+python -m training.train --model phase_invariant --h_hat_mode dmrs_ls_interp --train_phase_mode fixed --val_phase_mode uniform --save_dir runs/invariant_dmrs
+python -m training.train --model physical_cnn --h_hat_mode dmrs_ls_interp --train_phase_mode fixed --val_phase_mode uniform --save_dir runs/physical_dmrs
 ```
 
 This first DMRS version uses full-DMRS OFDM symbols across all subcarriers, so only time interpolation is required. A more realistic next step is comb-type DMRS in frequency, which requires both time and frequency interpolation.
