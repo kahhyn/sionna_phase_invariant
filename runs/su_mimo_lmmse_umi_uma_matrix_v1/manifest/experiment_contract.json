@@ -1,0 +1,44 @@
+{
+  "experiment_id": "su_mimo_lmmse_umi_uma_matrix_v1",
+  "status": "frozen",
+  "purpose": "Evaluate LS-CSI LMMSE and perfect-CSI LMMSE on the seven available UMi/UMa-mix SU-MIMO spatial configurations.",
+  "reference_checkpoint_family": "su_mimo_phase_sensitive_seed0",
+  "checkpoint_role": "Configuration provenance only; neural weights are not used by either LMMSE receiver.",
+  "spatial_configurations": [
+    {"id": "layer2_rx2", "num_layers": 2, "num_rx_ant": 2, "checkpoint": "su_mimo_phase_sensitive_layer2_rx2_seed0.pt"},
+    {"id": "layer2_rx4", "num_layers": 2, "num_rx_ant": 4, "checkpoint": "su_mimo_phase_sensitive_layer2_rx4_seed0.pt"},
+    {"id": "layer2_rx8", "num_layers": 2, "num_rx_ant": 8, "checkpoint": "su_mimo_phase_sensitive_layer2_rx8_seed0.pt"},
+    {"id": "layer2_rx16", "num_layers": 2, "num_rx_ant": 16, "checkpoint": "su_mimo_phase_sensitive_rx16_seed0.pt"},
+    {"id": "layer4_rx4", "num_layers": 4, "num_rx_ant": 4, "checkpoint": "su_mimo_phase_sensitive_layer4_rx4_seed0.pt"},
+    {"id": "layer4_rx8", "num_layers": 4, "num_rx_ant": 8, "checkpoint": "su_mimo_phase_sensitive_layer4_rx8_seed0.pt"},
+    {"id": "layer4_rx16", "num_layers": 4, "num_rx_ant": 16, "checkpoint": "su_mimo_phase_sensitive_layer4_rx16_seed0.pt"}
+  ],
+  "test_profiles": [
+    "configs/channel_profiles/umi_normalized.json",
+    "configs/channel_profiles/uma_normalized.json"
+  ],
+  "receivers": {
+    "lmmse_ls": "Sionna soft-output linear MMSE using LS channel estimates and channel-estimation error variance.",
+    "lmmse_perfect": "Sionna soft-output linear MMSE using the true channel and zero channel-estimation error variance; not an ML or capacity bound."
+  },
+  "evaluation": {
+    "primary_metric": "user_frame_bler",
+    "secondary_metrics": ["post_ldpc_ber", "pre_ldpc_coded_ber", "coded_bce", "per_layer_bler", "per_layer_post_ldpc_ber"],
+    "ebno_db": [3, 5, 7, 9, 11, 13],
+    "coderate": 0.5,
+    "decoder_iterations": 20,
+    "cn_update": "boxplus-phi",
+    "phase_mode": "uniform",
+    "batch_size": 16,
+    "target_user_frame_errors": 500,
+    "max_user_frames_per_point": 20000,
+    "eval_seed": 777000,
+    "common_random_numbers": true,
+    "pairing": "For each spatial configuration and channel profile, both receivers use the same seed and generator protocol at every Eb/N0 point."
+  },
+  "expected_outputs": {
+    "aggregate_rows": 168,
+    "curves": 28,
+    "points_per_curve": 6
+  }
+}

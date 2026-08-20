@@ -1,0 +1,54 @@
+{
+  "checkpoint_dir": "tests/representation_invariance/runs_unified_lin",
+  "checkpoint_seed": 42,
+  "snr_list": "-5,19",
+  "num_test": 2,
+  "batch_size": 1,
+  "eval_seed": 777042,
+  "device": "cuda",
+  "progress_interval": 1,
+  "output_dir": "tests/representation_invariance/runs_unified_lin/eval_cnn_vs_classical_lmmse_smoke",
+  "snr_values": [
+    -5.0,
+    19.0
+  ],
+  "cnn_metadata": {
+    "identity": {
+      "checkpoint": "tests/representation_invariance/runs_unified_lin/model_identity_seed42.pt",
+      "gamma_scale": 1.0,
+      "n0_mode": "original",
+      "ls_interpolation_type": "lin"
+    },
+    "qr": {
+      "checkpoint": "tests/representation_invariance/runs_unified_lin/model_qr_seed42.pt",
+      "gamma_scale": 1.0,
+      "n0_mode": "original",
+      "ls_interpolation_type": "lin"
+    },
+    "svd": {
+      "checkpoint": "tests/representation_invariance/runs_unified_lin/model_svd_seed42.pt",
+      "gamma_scale": 1.0,
+      "n0_mode": "original",
+      "ls_interpolation_type": "lin"
+    },
+    "polar": {
+      "checkpoint": "tests/representation_invariance/runs_unified_lin/model_polar_seed42.pt",
+      "gamma_scale": 1.0,
+      "n0_mode": "original",
+      "ls_interpolation_type": "lin"
+    },
+    "mf": {
+      "checkpoint": "tests/representation_invariance/runs_unified_lin/model_mf_seed42.pt",
+      "gamma_scale": 1.0,
+      "n0_mode": "original",
+      "ls_interpolation_type": "lin"
+    },
+    "lmmse": {
+      "checkpoint": "tests/representation_invariance/runs_unified_lin/model_lmmse_seed42.pt",
+      "gamma_scale": 1.0,
+      "n0_mode": "original",
+      "ls_interpolation_type": "lin"
+    }
+  },
+  "classical_receiver": "SionnaSUMIMOLMMSEBaseline(csi='ls')"
+}

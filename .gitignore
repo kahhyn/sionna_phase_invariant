@@ -22,3 +22,9 @@ data/dichasus/
 SANITY_CHECK*.txt
 .DS_Store
 Thumbs.db
+
+# Curated, reproducible seven-configuration SU-MIMO LMMSE result matrix.
+!runs/
+runs/*
+!runs/su_mimo_lmmse_umi_uma_matrix_v1/
+!runs/su_mimo_lmmse_umi_uma_matrix_v1/**
